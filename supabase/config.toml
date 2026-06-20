@@ -1,0 +1,17 @@
+[functions]
+enabled = true
+
+[functions.monthly-rollover]
+enabled = true
+verify_jwt = false
+import_map = "./monthly-rollover/deno.json"
+
+[functions.reset-collector-pin]
+enabled = true
+verify_jwt = true
+import_map = "./reset-collector-pin/deno.json"
+
+[functions.public-aggregate]
+enabled = true
+verify_jwt = false
+import_map = "./public-aggregate/deno.json"
