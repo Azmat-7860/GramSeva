@@ -168,6 +168,19 @@ export const supabaseApi = createApi({
       providesTags: ['CollectionMembers'],
     }),
 
+    getCollectionMemberDetail: builder.query<any, string>({
+      queryFn: async (memberId) => {
+        const { data, error } = await supabase
+          .from('collection_members')
+          .select('*, villagers(name, phone), collections(name)')
+          .eq('id', memberId)
+          .single();
+        if (error) return { error };
+        return { data: data ?? null };
+      },
+      providesTags: ['CollectionMembers'],
+    }),
+
     // ─── Payments ────────────────────────────────────────────
     getPaymentsForCollection: builder.query<Payment[], string>({ // collection_member_id
       queryFn: async (collectionMemberId) => {
@@ -284,6 +297,7 @@ export const {
   useCreateCollectionMutation,
   useCloseCollectionMutation,
   useGetCollectionMembersQuery,
+  useGetCollectionMemberDetailQuery,
   useGetPaymentsForCollectionQuery,
   useRecordPaymentMutation,
   useUpdatePaymentMutation,

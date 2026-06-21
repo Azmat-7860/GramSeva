@@ -1,23 +1,43 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import React, { useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Avatar, Button, Badge, Card } from '../../components/common';
 import { formatCurrency } from '../../utils/currency';
+import { getCurrentMonthLabel } from '../../utils/dates';
 import { useSMS } from '../../hooks/useSMS';
+import {
+  useGetCollectionMemberDetailQuery,
+  useGetPaymentsForCollectionQuery,
+  useRecordPaymentMutation,
+} from '../../store/api/supabaseApi';
+import { useAppSelector } from '../../store/store';
 import * as Haptics from 'expo-haptics';
 
 export function RecordPaymentScreen({ route, navigation }: any) {
   const { memberId } = route.params;
+  const collector = useAppSelector((s) => s.collector.currentCollector);
   const { sendSMS, generateReminderMessage } = useSMS();
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [sending, setSending] = useState(false);
 
-  const amountDue = 1000;
-  const amountPaid = 0;
+  const [amount, setAmount] = React.useState('');
+  const [note, setNote] = React.useState('');
+
+  const { data: member, isLoading: loadingMember } = useGetCollectionMemberDetailQuery(memberId);
+  const { data: payments = [] } = useGetPaymentsForCollectionQuery(memberId);
+  const [recordPayment, { isLoading: saving }] = useRecordPaymentMutation();
+
+  const villagerData: { name: string; phone: string } | null =
+    (member?.villagers as any) ?? null;
+  const collectionData: { name: string } | null =
+    (member?.collections as any) ?? null;
+
+  const amountDue = Number(member?.amount_due ?? 0);
+  const amountPaid = useMemo(
+    () => payments.reduce((s, p) => s + Number(p.amount_paid), 0),
+    [payments]
+  );
   const remaining = amountDue - amountPaid;
   const enteredAmount = parseFloat(amount || '0');
 
@@ -34,23 +54,53 @@ export function RecordPaymentScreen({ route, navigation }: any) {
     full: { label: 'Full Payment', color: colors.secondary },
   };
 
-  const handleSubmit = async () => {
+  const paymentType =
+    enteredAmount === 0 ? 'partial' : enteredAmount >= remaining ? 'full' : 'partial';
+
+  const handleSubmit = useCallback(async () => {
     if (!amount || enteredAmount <= 0) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSending(true);
 
-    const msg = generateReminderMessage(
-      'Villager Name',
-      enteredAmount,
-      'Monthly Fund',
-      Math.max(0, remaining - enteredAmount),
-      'Collector Name'
+    try {
+      await recordPayment({
+        collection_member_id: memberId,
+        amount_paid: enteredAmount,
+        payment_type: paymentType,
+        month_label: getCurrentMonthLabel(),
+        note: note || undefined,
+        recorded_by: collector?.id ?? undefined,
+      }).unwrap();
+
+      const msg = generateReminderMessage(
+        villagerData?.name ?? 'Villager',
+        enteredAmount,
+        collectionData?.name ?? 'Collection',
+        Math.max(0, remaining - enteredAmount),
+        collector?.name ?? 'Collector'
+      );
+
+      await sendSMS({
+        phoneNumber: villagerData?.phone ?? '',
+        message: msg,
+      });
+
+      navigation.goBack();
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? err?.error ?? 'Failed to record payment');
+    }
+  }, [
+    amount, enteredAmount, memberId, paymentType, note, collector,
+    recordPayment, villagerData, collectionData, remaining, sendSMS,
+    generateReminderMessage, navigation,
+  ]);
+
+  if (loadingMember) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
     );
-
-    await sendSMS({ phoneNumber: '9876543210', message: msg });
-    setSending(false);
-    navigation.goBack();
-  };
+  }
 
   return (
     <View style={styles.container}>
@@ -61,10 +111,10 @@ export function RecordPaymentScreen({ route, navigation }: any) {
 
         <Animated.View entering={FadeInUp.duration(400)}>
           <View style={styles.villagerHeader}>
-            <Avatar name="Villager Name" size={56} />
+            <Avatar name={villagerData?.name ?? 'Villager'} size={56} />
             <View style={styles.villagerInfo}>
-              <Text style={styles.villagerName}>Villager Name</Text>
-              <Text style={styles.villagerPhone}>9876543210</Text>
+              <Text style={styles.villagerName}>{villagerData?.name ?? 'Unknown'}</Text>
+              <Text style={styles.villagerPhone}>{villagerData?.phone ?? ''}</Text>
             </View>
           </View>
         </Animated.View>
@@ -127,22 +177,25 @@ export function RecordPaymentScreen({ route, navigation }: any) {
           />
         </Animated.View>
 
-        <Animated.View entering={FadeInUp.delay(250).duration(400)}>
-          <Card glass style={styles.smsPreview}>
-            <Text style={styles.smsLabel}>SMS Preview</Text>
-            <Text style={styles.smsText}>
-              Dear Villager Name, ₹{enteredAmount || 0} received for Monthly Fund. Remaining: ₹
-              {Math.max(0, remaining - enteredAmount)}. - Collector Name
-            </Text>
-          </Card>
-        </Animated.View>
+        {enteredAmount > 0 && (
+          <Animated.View entering={FadeInUp.delay(250).duration(400)}>
+            <Card glass style={styles.smsPreview}>
+              <Text style={styles.smsLabel}>SMS Preview</Text>
+              <Text style={styles.smsText}>
+                Dear {villagerData?.name ?? 'Villager'}, ₹{enteredAmount} received for{' '}
+                {collectionData?.name ?? 'Collection'}. Remaining: ₹
+                {Math.max(0, remaining - enteredAmount)}. - {collector?.name ?? 'Collector'}
+              </Text>
+            </Card>
+          </Animated.View>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
         <Button
           title="Confirm & Send SMS"
           onPress={handleSubmit}
-          loading={sending}
+          loading={saving}
           disabled={!amount || enteredAmount <= 0}
           fullWidth
         />
@@ -155,6 +208,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  loadingText: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 16,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingTop: 100,
   },
   scrollContent: {
     paddingHorizontal: spacing.xl,
