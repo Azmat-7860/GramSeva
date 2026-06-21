@@ -52,7 +52,7 @@ export function PublicCollectionViewScreen({ navigation }: any) {
           {activeCollections.map((c) => {
             const agg = aggregates[c.id];
             const collected = agg?.total_collected ?? 0;
-            const total = agg?.total_due ?? 0;
+            const total = c.target_amount ?? agg?.total_due ?? 0;
             const members = agg?.member_count ?? 0;
 
             return (

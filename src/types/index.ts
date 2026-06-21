@@ -33,6 +33,7 @@ export interface Collection {
   name: string;
   type: CollectionType;
   status: CollectionStatus;
+  target_amount: number | null;
   created_at: string;
 }
 
@@ -135,9 +136,10 @@ export interface CreateCollectionPayload {
   name: string;
   type: CollectionType;
   village_id: string;
+  target_amount?: number;
   members: {
     villager_id: string;
-    collector_id: string;
+    collector_id: string | null;
     amount_due: number;
     reminder_date?: number;
   }[];

@@ -21,10 +21,11 @@ interface CollectionCardProps {
 export function CollectionCard({
   collection,
   collected,
-  total,
+  total: _total,
   onPress,
   index = 0,
 }: CollectionCardProps) {
+  const total = collection.target_amount ?? _total;
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <Card index={index}>

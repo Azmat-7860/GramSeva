@@ -155,6 +155,32 @@ export const supabaseApi = createApi({
       invalidatesTags: ['Collections'],
     }),
 
+    updateCollection: builder.mutation<Collection, Partial<Collection> & { id: string }>({
+      queryFn: async ({ id, ...updates }) => {
+        const { data, error } = await supabase
+          .from('collections')
+          .update(updates)
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) return { error };
+        return { data };
+      },
+      invalidatesTags: ['Collections'],
+    }),
+
+    deleteCollection: builder.mutation<null, string>({
+      queryFn: async (id) => {
+        const { error } = await supabase
+          .from('collections')
+          .delete()
+          .eq('id', id);
+        if (error) return { error };
+        return { data: null };
+      },
+      invalidatesTags: ['Collections'],
+    }),
+
     // ─── Collection Members ──────────────────────────────────
     getCollectionMembers: builder.query<CollectionMember[], string>({
       queryFn: async (collectionId) => {
@@ -425,6 +451,8 @@ export const {
   useGetCollectionsQuery,
   useCreateCollectionMutation,
   useCloseCollectionMutation,
+  useUpdateCollectionMutation,
+  useDeleteCollectionMutation,
   useGetCollectionMembersQuery,
   useGetCollectionMembersWithVillagersQuery,
   useGetCollectionMemberDetailQuery,

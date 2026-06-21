@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,82 +7,100 @@ import {
   TouchableOpacity,
   TextInput,
 } from 'react-native';
-import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import Toast from 'react-native-toast-message';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Button, Input, Avatar } from '../../components/common';
-import { useCreateCollectionMutation, useGetVillagersQuery } from '../../store/api/supabaseApi';
-import Toast from 'react-native-toast-message';
+import {
+  useCreateCollectionMutation,
+  useGetVillagersQuery,
+} from '../../store/api/supabaseApi';
 import { useAppSelector } from '../../store/store';
-
-const collectionSchema = z.object({
-  name: z.string().min(1, 'Collection name is required'),
-  type: z.enum(['recurring', 'one_time']),
-  members: z.array(z.object({
-    villager_id: z.string(),
-    amount_due: z.number().min(1, 'Amount must be greater than 0'),
-  })).min(1, 'Select at least one villager'),
-});
-
-type CollectionFormData = z.infer<typeof collectionSchema>;
 
 export function CreateCollectionScreen({ navigation }: any) {
   const { villageId } = useAppSelector((state) => state.auth);
   const { data: villagers = [] } = useGetVillagersQuery(villageId ?? '');
   const [createCollection, { isLoading }] = useCreateCollectionMutation();
 
-  const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<CollectionFormData>({
-    resolver: zodResolver(collectionSchema),
-    defaultValues: {
-      name: '',
-      type: 'recurring',
-      members: [],
-    },
-  });
+  const [name, setName] = useState('');
+  const [type, setType] = useState<'recurring' | 'one_time'>('recurring');
+  const [targetAmount, setTargetAmount] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
 
-  const selectedMembers = watch('members');
+  const toggleVillager = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
-  const toggleVillager = (id: string) => {
-    const exists = selectedMembers.find((m) => m.villager_id === id);
-    if (exists) {
-      setValue('members', selectedMembers.filter((m) => m.villager_id !== id), { shouldValidate: true });
-    } else {
-      setValue('members', [...selectedMembers, { villager_id: id, amount_due: 0 }], { shouldValidate: true });
+  const setAmount = useCallback((id: string, val: string) => {
+    // allow only numbers
+    if (/^\d*$/.test(val)) {
+      setAmounts((prev) => ({ ...prev, [id]: val }));
     }
-  };
+  }, []);
 
-  const setAmount = (id: string, val: string) => {
-    const num = parseFloat(val) || 0;
-    setValue('members', selectedMembers.map((m) =>
-      m.villager_id === id ? { ...m, amount_due: num } : m
-    ), { shouldValidate: true });
-  };
+  const isInvalid =
+    !name ||
+    selectedIds.size === 0 ||
+    Array.from(selectedIds).some((id) => !amounts[id]) ||
+    !targetAmount;
 
-  const onSubmit = async (data: CollectionFormData) => {
-    if (!villageId) return;
+  const handleCreate = async () => {
+    if (!villageId) {
+      Toast.show({ type: 'error', text1: 'Village not found' });
+      return;
+    }
+
+    if (isInvalid) {
+      Toast.show({
+        type: 'error',
+        text1: 'Please fill all required fields',
+      });
+      return;
+    }
+
     try {
       await createCollection({
-        name: data.name,
-        type: data.type,
+        name,
+        type,
         village_id: villageId,
-        members: data.members.map((m) => ({
-          villager_id: m.villager_id,
-          collector_id: '',
-          amount_due: m.amount_due,
+        target_amount: parseFloat(targetAmount) || 0,
+        members: Array.from(selectedIds).map((vid) => ({
+          villager_id: vid,
+          collector_id: null,
+          amount_due: parseFloat(amounts[vid] || '0'),
         })),
       }).unwrap();
+
+      Toast.show({
+        type: 'success',
+        text1: `Collection "${name}" created`,
+      });
+
+      // Reset state
+      setName('');
+      setSelectedIds(new Set());
+      setAmounts({});
+
       navigation.goBack();
     } catch (err: any) {
-      Toast.show({ type: 'error', text1: err?.message ?? err?.error ?? 'Failed to create collection' });
+      Toast.show({
+        type: 'error',
+        text1: err?.message ?? err?.error ?? 'Failed to create collection',
+      });
     }
   };
 
   return (
     <View style={styles.container}>
+      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.title}>New Collection</Text>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -90,86 +108,129 @@ export function CreateCollectionScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <Controller
-          control={control}
-          name="name"
-          render={({ field: { onChange, value } }) => (
-            <Input
-              label="Collection Name"
-              placeholder="e.g. Monthly Fund"
-              value={value}
-              onChangeText={onChange}
-              error={errors.name?.message}
-            />
-          )}
+      {/* BODY */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Input
+          label="Collection Name"
+          placeholder="e.g. Monthly Fund"
+          value={name}
+          onChangeText={setName}
         />
 
-        <Controller
-          control={control}
-          name="type"
-          render={({ field: { onChange, value } }) => (
-            <>
-              <Text style={styles.label}>Type</Text>
-              <View style={styles.typeRow}>
-                <TouchableOpacity
-                  style={[styles.typeBtn, value === 'recurring' && styles.typeBtnActive]}
-                  onPress={() => onChange('recurring')}
-                >
-                  <Text style={[styles.typeText, value === 'recurring' && styles.typeTextActive]}>Recurring</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.typeBtn, value === 'one_time' && styles.typeBtnActive]}
-                  onPress={() => onChange('one_time')}
-                >
-                  <Text style={[styles.typeText, value === 'one_time' && styles.typeTextActive]}>One-time</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
+        {/* TYPE */}
+        <Text style={styles.label}>Type</Text>
+        <View style={styles.typeRow}>
+          <TouchableOpacity
+            style={[
+              styles.typeBtn,
+              type === 'recurring' && styles.typeBtnActive,
+            ]}
+            onPress={() => setType('recurring')}
+          >
+            <Text
+              style={[
+                styles.typeText,
+                type === 'recurring' && styles.typeTextActive,
+              ]}
+            >
+              Recurring
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.typeBtn,
+              type === 'one_time' && styles.typeBtnActive,
+            ]}
+            onPress={() => setType('one_time')}
+          >
+            <Text
+              style={[
+                styles.typeText,
+                type === 'one_time' && styles.typeTextActive,
+              ]}
+            >
+              One-time
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* TARGET AMOUNT */}
+        <Text style={styles.label}>Target Amount</Text>
+        <TextInput
+          style={styles.targetInput}
+          placeholder="e.g. 50000"
+          placeholderTextColor={colors.textMuted}
+          keyboardType="numeric"
+          value={targetAmount}
+          onChangeText={(val) => /^\d*$/.test(val) && setTargetAmount(val)}
         />
 
-        <Text style={styles.label}>Select Villagers ({selectedMembers.length})</Text>
-        {errors.members && (
-          <Text style={styles.errorText}>{errors.members.message}</Text>
-        )}
-                {villagers.map((v, i) => {
-          const selected = selectedMembers.find((m) => m.villager_id === v.id);
-          return (
-            <Animated.View key={v.id} entering={FadeInUp.delay(i * 50).duration(300)}>
-              <TouchableOpacity
-                style={[styles.villagerRow, selected && styles.villagerRowSelected]}
-                onPress={() => toggleVillager(v.id)}
-                activeOpacity={0.7}
+        {/* VILLAGERS */}
+        <Text style={styles.label}>
+          Select Villagers ({selectedIds.size})
+        </Text>
+
+        {villagers.length === 0 ? (
+          <Text style={{ color: colors.textMuted }}>
+            No villagers found
+          </Text>
+        ) : (
+          villagers.map((v, i) => (
+            <Animated.View
+              key={v.id}
+              entering={FadeInUp.delay(i * 50).duration(300)}
+            >
+              <View
+                style={[
+                  styles.villagerRow,
+                  selectedIds.has(v.id) && styles.villagerRowSelected,
+                ]}
               >
-                <Avatar name={v.name} size={36} />
-                <View style={styles.villagerInfo}>
-                  <Text style={styles.villagerName}>{v.name}</Text>
-                  <Text style={styles.villagerPhone}>{v.phone}</Text>
-                </View>
-                {selected && (
-                  <View onStartShouldSetResponder={() => true}>
-                    <TextInput
-                      style={styles.amountInput}
-                      placeholder="Amount"
-                      placeholderTextColor={colors.textMuted}
-                      keyboardType="numeric"
-                      value={String(selected.amount_due || '')}
-                      onChangeText={(val) => setAmount(v.id, val)}
-                    />
+                {/* CLICKABLE AREA */}
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', flex: 1 }}
+                  onPress={() => toggleVillager(v.id)}
+                >
+                  <Avatar name={v.name} size={36} />
+                  <View style={styles.villagerInfo}>
+                    <Text style={styles.villagerName}>{v.name}</Text>
+                    <Text style={styles.villagerPhone}>
+                      {v.phone}
+                    </Text>
                   </View>
+                </TouchableOpacity>
+
+                {/* INPUT */}
+                {selectedIds.has(v.id) && (
+                  <TextInput
+                    style={styles.amountInput}
+                    placeholder="Amount"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="numeric"
+                    value={amounts[v.id] || ''}
+                    onChangeText={(val) => setAmount(v.id, val)}
+                  />
                 )}
-              </TouchableOpacity>
+              </View>
             </Animated.View>
-          );
-        })}
+          ))
+        )}
       </ScrollView>
 
+      {/* FOOTER */}
       <View style={styles.footer}>
         <Button
-          title="Create Collection"
-          onPress={handleSubmit(onSubmit)}
+          title={`Create ${
+            type === 'recurring' ? 'Recurring' : 'One-time'
+          } Collection`}
+          onPress={handleCreate}
           loading={isLoading}
+          disabled={isInvalid}
           fullWidth
         />
       </View>
@@ -178,10 +239,8 @@ export function CreateCollectionScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -190,23 +249,26 @@ const styles = StyleSheet.create({
     paddingTop: spacing.huge,
     paddingBottom: spacing.lg,
   },
+
   title: {
     fontFamily: fonts.poppins.bold,
     fontSize: 24,
     color: colors.textPrimary,
   },
+
   cancelText: {
     fontFamily: fonts.poppins.medium,
     fontSize: 14,
     color: colors.textMuted,
   },
-  scroll: {
-    flex: 1,
-  },
+
+  scroll: { flex: 1 },
+
   scrollContent: {
     paddingHorizontal: spacing.xl,
     paddingBottom: 100,
   },
+
   label: {
     fontFamily: fonts.poppins.medium,
     fontSize: 13,
@@ -215,11 +277,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+
   typeRow: {
     flexDirection: 'row',
     gap: spacing.md,
     marginBottom: spacing.xl,
   },
+
   typeBtn: {
     flex: 1,
     paddingVertical: spacing.md,
@@ -229,18 +293,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
+
   typeBtnActive: {
     backgroundColor: colors.primary + '20',
     borderColor: colors.primary,
   },
+
   typeText: {
     fontFamily: fonts.poppins.medium,
     fontSize: 14,
     color: colors.textMuted,
   },
-  typeTextActive: {
-    color: colors.primary,
-  },
+
+  typeTextActive: { color: colors.primary },
+
   villagerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -252,25 +318,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
+
   villagerRowSelected: {
     backgroundColor: colors.primary + '10',
     borderColor: colors.primary + '30',
   },
+
   villagerInfo: {
     flex: 1,
     marginLeft: spacing.md,
   },
+
   villagerName: {
     fontFamily: fonts.poppins.medium,
     fontSize: 15,
     color: colors.textPrimary,
   },
+
   villagerPhone: {
     fontFamily: fonts.inter.regular,
     fontSize: 12,
     color: colors.textMuted,
     marginTop: 2,
   },
+
   amountInput: {
     fontFamily: fonts.jetbrainsMono.regular,
     fontSize: 14,
@@ -284,12 +355,22 @@ const styles = StyleSheet.create({
     width: 100,
     textAlign: 'right',
   },
-  errorText: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 12,
-    color: colors.danger,
-    marginBottom: spacing.sm,
+
+  targetInput: {
+    fontFamily: fonts.jetbrainsMono.regular,
+    fontSize: 16,
+    color: colors.textPrimary,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.xl,
+    textAlign: 'center',
+    fontWeight: '600',
   },
+
   footer: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.lg,

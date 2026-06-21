@@ -17,6 +17,13 @@ serve(async (req) => {
     });
   }
 
+  // Get collection (for target_amount)
+  const { data: collection } = await supabase
+    .from('collections')
+    .select('target_amount')
+    .eq('id', collectionId)
+    .single();
+
   // Get collection members
   const { data: members, error: membersError } = await supabase
     .from('collection_members')
@@ -38,7 +45,7 @@ serve(async (req) => {
   }
 
   const memberIds = members.map((m) => m.id);
-  const totalDue = members.reduce((sum, m) => sum + Number(m.amount_due), 0);
+  const totalDue = collection?.target_amount ?? members.reduce((sum, m) => sum + Number(m.amount_due), 0);
 
   // Get payments for these members
   const { data: payments } = await supabase

@@ -62,12 +62,18 @@ export function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) 
                 {formatCurrency(totalPending)}
               </Text>
             </Card>
-            <Card glass style={styles.statCard}>
-              <Text style={styles.statLabel}>Collections</Text>
-              <Text style={[styles.statValue, { color: colors.primary }]}>
-                {collections.length}
-              </Text>
-            </Card>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('AllCollections')}
+              activeOpacity={0.7}
+            >
+              <Card glass style={styles.statCard}>
+                <Text style={styles.statLabel}>Collections </Text>
+                  {/* <Text style={{ color: colors.textMuted }}></Text> */}
+                <Text style={[styles.statValue, { color: colors.primary }]}>
+                  {collections.length} →
+                </Text>
+              </Card>
+            </TouchableOpacity>
           </View>
         </Animated.View>
 
@@ -93,6 +99,29 @@ export function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) 
             </Card>
           )}
         </Animated.View>
+
+        <Animated.View entering={FadeInUp.delay(300).duration(600)}>
+          <Text style={[styles.sectionTitle, { marginTop: spacing.xxl }]}>Closed Collections</Text>
+          {collections
+            .filter((c) => c.status === 'closed')
+            .map((collection, index) => (
+              <CollectionCard
+                key={collection.id}
+                collection={collection}
+                collected={statsMap[collection.id]?.collected ?? 0}
+                total={statsMap[collection.id]?.total ?? 0}
+                index={index}
+                onPress={() =>
+                  navigation.navigate('CollectionDetail', { collectionId: collection.id })
+                }
+              />
+            ))}
+          {collections.filter((c) => c.status === 'closed').length === 0 && (
+            <Card glass>
+              <Text style={styles.emptyText}>No closed collections.</Text>
+            </Card>
+          )}
+        </Animated.View>
       </ScrollView>
 
       <TouchableOpacity
@@ -115,7 +144,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
   header: {
     flexDirection: 'row',

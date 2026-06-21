@@ -11,6 +11,7 @@ import { AdminLoginScreen } from '../screens/auth/AdminLoginScreen';
 import { CollectorPhoneCheckScreen } from '../screens/auth/CollectorPhoneCheckScreen';
 import { CollectorPINScreen } from '../screens/auth/CollectorPINScreen';
 import { AdminDashboardScreen } from '../screens/admin/AdminDashboardScreen';
+import { AllCollectionsScreen } from '../screens/admin/AllCollectionsScreen';
 import { CreateCollectionScreen } from '../screens/admin/CreateCollectionScreen';
 import { CollectionDetailScreen } from '../screens/admin/CollectionDetailScreen';
 import { VillagerPaymentDetailScreen } from '../screens/admin/VillagerPaymentDetailScreen';
@@ -108,6 +109,7 @@ function AdminStack() {
       }}
     >
       <Stack.Screen name="AdminDashboard" component={AdminTabs} />
+      <Stack.Screen name="AllCollections" component={AllCollectionsScreen} />
       <Stack.Screen
         name="CreateCollection"
         component={CreateCollectionScreen}
