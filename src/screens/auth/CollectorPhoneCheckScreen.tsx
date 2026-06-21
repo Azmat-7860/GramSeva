@@ -76,7 +76,8 @@ export function CollectorPhoneCheckScreen({ navigation }: CollectorPhoneCheckScr
             disabled={manualPhone.length < 10}
             fullWidth
           />
-          <Button title="Not a collector?" onPress={() => setFound(false)} variant="ghost" />
+          {/* <Button title="Not a collector?" onPress={() => setFound(false)} variant="ghost" /> */}
+          <Button title="Not a collector?" onPress={() => navigation.goBack()} variant="ghost" />
         </Animated.View>
       </View>
     );
