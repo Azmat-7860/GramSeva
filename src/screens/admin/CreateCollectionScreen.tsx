@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Alert,
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
@@ -13,10 +14,11 @@ import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Button, Input, Avatar } from '../../components/common';
 import { useCreateCollectionMutation, useGetVillagersQuery } from '../../store/api/supabaseApi';
+import { useAppSelector } from '../../store/store';
 
 export function CreateCollectionScreen({ navigation }: any) {
-  const villageId = 'placeholder-village-id';
-  const { data: villagers = [] } = useGetVillagersQuery(villageId);
+  const { villageId } = useAppSelector((state) => state.auth);
+  const { data: villagers = [] } = useGetVillagersQuery(villageId ?? '');
   const [createCollection, { isLoading }] = useCreateCollectionMutation();
 
   const [name, setName] = useState('');
@@ -36,18 +38,22 @@ export function CreateCollectionScreen({ navigation }: any) {
   };
 
   const handleCreate = async () => {
-    if (!name || selectedIds.size === 0) return;
-    await createCollection({
-      name,
-      type,
-      village_id: villageId,
-      members: Array.from(selectedIds).map((vid) => ({
-        villager_id: vid,
-        collector_id: '',
-        amount_due: parseFloat(amounts[vid] || '0'),
-      })),
-    });
-    navigation.goBack();
+    if (!name || selectedIds.size === 0 || !villageId) return;
+    try {
+      await createCollection({
+        name,
+        type,
+        village_id: villageId,
+        members: Array.from(selectedIds).map((vid) => ({
+          villager_id: vid,
+          collector_id: '',
+          amount_due: parseFloat(amounts[vid] || '0'),
+        })),
+      }).unwrap();
+      navigation.goBack();
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? err?.error ?? 'Failed to create collection');
+    }
   };
 
   return (

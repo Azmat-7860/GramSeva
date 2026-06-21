@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
@@ -99,7 +99,13 @@ export function CollectionDetailScreen({ route, navigation }: any) {
         <View style={styles.footer}>
           <Button
             title="Close Collection"
-            onPress={() => closeCollection(collectionId)}
+            onPress={async () => {
+              try {
+                await closeCollection(collectionId).unwrap();
+              } catch (err: any) {
+                Alert.alert('Error', err?.message ?? err?.error ?? 'Failed to close collection');
+              }
+            }}
             loading={closing}
             variant="danger"
             fullWidth

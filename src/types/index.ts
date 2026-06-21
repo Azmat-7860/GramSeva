@@ -81,6 +81,8 @@ export interface AuthState {
   email: string | null;
   isLoggedIn: boolean;
   role: 'admin' | 'collector' | null;
+  villageId: string | null;
+  villageName: string | null;
 }
 
 export interface CollectorState {

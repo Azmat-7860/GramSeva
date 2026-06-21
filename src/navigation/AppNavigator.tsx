@@ -86,6 +86,53 @@ function AdminTabs() {
   );
 }
 
+function AuthStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0E1A' } }}>
+      <Stack.Screen name="AdminLogin" component={AdminLoginScreen} />
+      <Stack.Screen name="CollectorPhoneCheck" component={CollectorPhoneCheckScreen} />
+      <Stack.Screen name="CollectorPIN" component={CollectorPINScreen} />
+      <Stack.Screen name="PublicCollectionView" component={PublicCollectionViewScreen} />
+      <Stack.Screen name="VillagerHistory" component={VillagerHistoryScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function AdminStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: '#0A0E1A' },
+        animation: 'slide_from_right',
+      }}
+    >
+      <Stack.Screen name="AdminDashboard" component={AdminTabs} />
+      <Stack.Screen
+        name="CreateCollection"
+        component={CreateCollectionScreen}
+        options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen name="CollectionDetail" component={CollectionDetailScreen} />
+      <Stack.Screen name="VillagerPaymentDetail" component={VillagerPaymentDetailScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function CollectorStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: '#0A0E1A' },
+      }}
+    >
+      <Stack.Screen name="CollectorDashboard" component={CollectorDashboardScreen} />
+      <Stack.Screen name="RecordPayment" component={RecordPaymentScreen} />
+    </Stack.Navigator>
+  );
+}
+
 export function AppNavigator() {
   const { isLoggedIn, role } = useAppSelector((state) => state.auth);
   const { pinVerified } = useAppSelector((state) => state.collector);
@@ -95,37 +142,17 @@ export function AppNavigator() {
     return <SplashScreen onComplete={() => setShowSplash(false)} />;
   }
 
-  let initialRoute = 'AdminLogin';
-  if (isLoggedIn && role === 'admin') {
-    initialRoute = 'AdminDashboard';
-  } else if (isLoggedIn && role === 'collector' && pinVerified) {
-    initialRoute = 'CollectorDashboard';
-  } else if (!isLoggedIn && role === 'collector') {
-    initialRoute = 'CollectorPhoneCheck';
-  }
-
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName={initialRoute}
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: '#0A0E1A' },
-          animation: 'slide_from_right',
-        }}
-      >
-        <Stack.Screen name="AdminLogin" component={AdminLoginScreen} />
-        <Stack.Screen name="AdminDashboard" component={AdminTabs} />
-        <Stack.Screen name="CollectorPhoneCheck" component={CollectorPhoneCheckScreen} />
-        <Stack.Screen name="CollectorPIN" component={CollectorPINScreen} />
-        <Stack.Screen name="CollectorDashboard" component={CollectorDashboardScreen} />
-        <Stack.Screen name="RecordPayment" component={RecordPaymentScreen} />
-        <Stack.Screen name="CreateCollection" component={CreateCollectionScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="CollectionDetail" component={CollectionDetailScreen} />
-        <Stack.Screen name="VillagerPaymentDetail" component={VillagerPaymentDetailScreen} />
-        <Stack.Screen name="PublicCollectionView" component={PublicCollectionViewScreen} />
-        <Stack.Screen name="VillagerHistory" component={VillagerHistoryScreen} />
-      </Stack.Navigator>
+      {!isLoggedIn ? (
+        <AuthStack />
+      ) : role === 'admin' ? (
+        <AdminStack />
+      ) : pinVerified ? (
+        <CollectorStack />
+      ) : (
+        <AuthStack />
+      )}
     </NavigationContainer>
   );
 }

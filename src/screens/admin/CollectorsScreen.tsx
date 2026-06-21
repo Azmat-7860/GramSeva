@@ -1,26 +1,31 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Avatar, Button, Input, Badge } from '../../components/common';
 import { useGetCollectorsQuery, useAddCollectorMutation } from '../../store/api/supabaseApi';
+import { useAppSelector } from '../../store/store';
 
 export function CollectorsScreen({ navigation }: any) {
-  const villageId = 'placeholder-village-id';
-  const { data: collectors = [] } = useGetCollectorsQuery(villageId);
+  const { villageId } = useAppSelector((state) => state.auth);
+  const { data: collectors = [] } = useGetCollectorsQuery(villageId ?? '');
   const [addCollector, { isLoading }] = useAddCollectorMutation();
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
 
   const handleAdd = async () => {
-    if (!name || !phone) return;
-    await addCollector({ name, phone, village_id: villageId });
-    setName('');
-    setPhone('');
-    setModalVisible(false);
+    if (!name || !phone || !villageId) return;
+    try {
+      await addCollector({ name, phone, village_id: villageId }).unwrap();
+      setName('');
+      setPhone('');
+      setModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? err?.error ?? 'Failed to add collector');
+    }
   };
 
   return (

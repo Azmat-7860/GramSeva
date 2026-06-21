@@ -9,7 +9,8 @@ import { CollectionCard } from '../../components/collections';
 import { AmbientMesh } from '../../components/three/AmbientMesh';
 import { AnimatedCounter } from '../../components/charts';
 import { useGetCollectionsQuery, useGetVillagersQuery } from '../../store/api/supabaseApi';
-import { useAppSelector } from '../../store/store';
+import { useAppDispatch, useAppSelector } from '../../store/store';
+import { clearSession } from '../../store/slices/authSlice';
 import { formatCurrency } from '../../utils/currency';
 
 interface AdminDashboardScreenProps {
@@ -17,11 +18,11 @@ interface AdminDashboardScreenProps {
 }
 
 export function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) {
-  const { email } = useAppSelector((state) => state.auth);
-  const villageId = 'placeholder-village-id'; // would come from user profile
+  const dispatch = useAppDispatch();
+  const { email, villageId, villageName } = useAppSelector((state) => state.auth);
 
-  const { data: collections = [] } = useGetCollectionsQuery(villageId);
-  const { data: villagers = [] } = useGetVillagersQuery(villageId);
+  const { data: collections = [] } = useGetCollectionsQuery(villageId ?? '');
+  const { data: villagers = [] } = useGetVillagersQuery(villageId ?? '');
 
   const totalCollected = 0; // would compute from payments
   const totalPending = 0;
@@ -33,10 +34,10 @@ export function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) 
         <Animated.View entering={FadeInUp.duration(600)}>
           <View style={styles.header}>
             <View>
-              <Text style={styles.villageName}>GramSeva</Text>
+              <Text style={styles.villageName}>{villageName ?? 'GramSeva'}</Text>
               <Text style={styles.adminEmail}>{email}</Text>
             </View>
-            <TouchableOpacity style={styles.logoutBtn}>
+            <TouchableOpacity style={styles.logoutBtn} onPress={() => dispatch(clearSession())}>
               <Text style={styles.logoutText}>Logout</Text>
             </TouchableOpacity>
           </View>

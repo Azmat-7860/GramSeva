@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -13,55 +13,97 @@ import { setSession } from '../../store/slices/authSlice';
 
 const loginSchema = z.object({
   email: z.string().email('Enter a valid email'),
-  otp: z.string().length(6, 'OTP must be 6 digits').optional(),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
+async function ensureVillage(userId: string): Promise<{ id: string; name: string }> {
+  const { data: existing } = await supabase
+    .from('villages')
+    .select('id, name')
+    .eq('admin_id', userId)
+    .maybeSingle();
+
+  if (existing) return existing;
+
+  const { data: created } = await supabase
+    .from('villages')
+    .insert({ admin_id: userId, name: 'My Village' })
+    .select('id, name')
+    .single();
+
+  return created ?? { id: '', name: 'My Village' };
+}
+
 export function AdminLoginScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
-  const [otpSent, setOtpSent] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const {
     control,
     handleSubmit,
-    getValues,
     formState: { errors },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
 
-  const sendOTP = async () => {
-    const email = getValues('email');
-    if (!email) return;
+  const handleAuth = async (data: LoginFormData) => {
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: true },
-    });
+    setError(null);
+
+    try {
+      if (isSignUp) {
+        const { data: authData, error } = await supabase.auth.signUp({
+          email: data.email,
+          password: data.password,
+        });
+        if (error) {
+          setError(error.message);
+          return;
+        }
+        if (authData.session) {
+          const village = await ensureVillage(authData.session.user.id);
+          dispatch(
+            setSession({
+              session: authData.session.access_token,
+              email: data.email,
+              role: 'admin',
+              villageId: village.id,
+              villageName: village.name,
+            })
+          );
+        } else {
+          setError('Account created! Check your email to confirm, then sign in.');
+          setIsSignUp(false);
+        }
+      } else {
+        const { data: authData, error } = await supabase.auth.signInWithPassword({
+          email: data.email,
+          password: data.password,
+        });
+        if (error) {
+          setError(error.message);
+          return;
+        }
+        const village = await ensureVillage(authData.session.user.id);
+        dispatch(
+          setSession({
+            session: authData.session.access_token,
+            email: data.email,
+            role: 'admin',
+            villageId: village.id,
+            villageName: village.name,
+          })
+        );
+      }
+    } catch {
+      setError('Something went wrong. Try again.');
+    }
+
     setLoading(false);
-    if (!error) setOtpSent(true);
-  };
-
-  const verifyOTP = async (data: LoginFormData) => {
-    setLoading(true);
-    const { data: authData, error } = await supabase.auth.verifyOtp({
-      email: data.email,
-      token: data.otp!,
-      type: 'email',
-    });
-    setLoading(false);
-
-    if (error || !authData.session) return;
-
-    dispatch(
-      setSession({
-        session: authData.session.access_token,
-        email: data.email,
-        role: 'admin',
-      })
-    );
   };
 
   return (
@@ -70,8 +112,10 @@ export function AdminLoginScreen({ navigation }: any) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        <Text style={styles.title}>Admin Login</Text>
-        <Text style={styles.subtitle}>Sign in to manage your village</Text>
+        <Text style={styles.title}>{isSignUp ? 'Create Account' : 'Admin Login'}</Text>
+        <Text style={styles.subtitle}>
+          {isSignUp ? 'Set up your admin account' : 'Sign in to manage your village'}
+        </Text>
 
         <Controller
           control={control}
@@ -89,38 +133,36 @@ export function AdminLoginScreen({ navigation }: any) {
           )}
         />
 
-        {!otpSent ? (
-          <Button
-            title="Send OTP"
-            onPress={sendOTP}
-            loading={loading}
-            fullWidth
-          />
-        ) : (
-          <>
-            <Controller
-              control={control}
-              name="otp"
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="Enter OTP"
-                  placeholder="000000"
-                  value={value}
-                  onChangeText={onChange}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  error={errors.otp?.message}
-                />
-              )}
+        <Controller
+          control={control}
+          name="password"
+          render={({ field: { onChange, value } }) => (
+            <Input
+              label="Password"
+              placeholder="Enter your password"
+              value={value}
+              onChangeText={onChange}
+              secureTextEntry
+              error={errors.password?.message}
             />
-            <Button
-              title="Verify & Login"
-              onPress={handleSubmit(verifyOTP)}
-              loading={loading}
-              fullWidth
-            />
-          </>
-        )}
+          )}
+        />
+
+        {error && <Text style={styles.errorText}>{error}</Text>}
+
+        <Button
+          title={isSignUp ? 'Create Account' : 'Sign In'}
+          onPress={handleSubmit(handleAuth)}
+          loading={loading}
+          fullWidth
+        />
+
+        <Button
+          title={isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Create one"}
+          onPress={() => { setIsSignUp(!isSignUp); setError(null); }}
+          variant="ghost"
+          style={{ marginTop: spacing.md }}
+        />
       </View>
     </KeyboardAvoidingView>
   );
@@ -147,5 +189,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textMuted,
     marginBottom: spacing.xxxl,
+  },
+  errorText: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    color: colors.danger,
+    marginBottom: spacing.md,
+    textAlign: 'center',
   },
 });

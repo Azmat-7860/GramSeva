@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Card, Avatar, Button, Input } from '../../components/common';
 import { useGetVillagersQuery, useAddVillagerMutation } from '../../store/api/supabaseApi';
+import { useAppSelector } from '../../store/store';
 
 export function VillagersScreen({ navigation }: any) {
-  const villageId = 'placeholder-village-id';
-  const { data: villagers = [] } = useGetVillagersQuery(villageId);
+  const { villageId } = useAppSelector((state) => state.auth);
+  const { data: villagers = [], error: fetchError } = useGetVillagersQuery(villageId ?? '');
   const [addVillager, { isLoading }] = useAddVillagerMutation();
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
@@ -21,11 +22,15 @@ export function VillagersScreen({ navigation }: any) {
   );
 
   const handleAdd = async () => {
-    if (!name || !phone) return;
-    await addVillager({ name, phone, village_id: villageId });
-    setName('');
-    setPhone('');
-    setModalVisible(false);
+    if (!name || !phone || !villageId) return;
+    try {
+      await addVillager({ name, phone, village_id: villageId }).unwrap();
+      setName('');
+      setPhone('');
+      setModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? err?.error ?? 'Failed to add villager');
+    }
   };
 
   return (
