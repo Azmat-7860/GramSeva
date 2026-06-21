@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
@@ -6,14 +6,19 @@ import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Card, Badge, Avatar } from '../../components/common';
 import { useCollectorAuth } from '../../hooks/useCollectorAuth';
-import { useGetCollectionMembersQuery } from '../../store/api/supabaseApi';
+import { useGetCollectorAssignmentsQuery, useGetPaymentsByVillageQuery } from '../../store/api/supabaseApi';
+import { formatCurrency } from '../../utils/currency';
 
 type FilterType = 'all' | 'pending' | 'partial' | 'done';
 
 export function CollectorDashboardScreen({ navigation }: any) {
   const { currentCollector } = useCollectorAuth();
   const [filter, setFilter] = useState<FilterType>('all');
-  const { data: members = [] } = useGetCollectionMembersQuery('');
+
+  const { data: assignments = [] } = useGetCollectorAssignmentsQuery(
+    currentCollector?.id ?? '',
+    { skip: !currentCollector?.id }
+  );
 
   const tabs: { key: FilterType; label: string }[] = [
     { key: 'all', label: 'All' },
@@ -21,6 +26,33 @@ export function CollectorDashboardScreen({ navigation }: any) {
     { key: 'partial', label: 'Partial' },
     { key: 'done', label: 'Done' },
   ];
+
+  const paymentMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    assignments.forEach((a: any) => {
+      a.payments?.forEach((p: any) => {
+        map[a.id] = (map[a.id] || 0) + Number(p.amount_paid);
+      });
+    });
+    return map;
+  }, [assignments]);
+
+  const totalVillagers = assignments.length;
+  const paidCount = assignments.filter((a: any) => (paymentMap[a.id] || 0) >= Number(a.amount_due)).length;
+  const progressPct = totalVillagers > 0 ? Math.round((paidCount / totalVillagers) * 100) : 0;
+
+  const filteredAssignments = useMemo(() => {
+    return assignments.filter((a: any) => {
+      const paid = paymentMap[a.id] || 0;
+      const due = Number(a.amount_due);
+      switch (filter) {
+        case 'done': return paid >= due;
+        case 'partial': return paid > 0 && paid < due;
+        case 'pending': return paid === 0;
+        default: return true;
+      }
+    });
+  }, [assignments, paymentMap, filter]);
 
   return (
     <View style={styles.container}>
@@ -40,9 +72,9 @@ export function CollectorDashboardScreen({ navigation }: any) {
           <Card glass style={styles.progressCard}>
             <Text style={styles.progressTitle}>Your Progress</Text>
             <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: '60%' }]} />
+              <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
             </View>
-            <Text style={styles.progressText}>6/10 villagers paid</Text>
+            <Text style={styles.progressText}>{paidCount}/{totalVillagers} villagers paid</Text>
           </Card>
         </Animated.View>
 
@@ -61,21 +93,35 @@ export function CollectorDashboardScreen({ navigation }: any) {
         </View>
 
         <Text style={styles.sectionTitle}>My Assignments</Text>
-        {[1, 2, 3].map((_, i) => (
-          <Animated.View key={i} entering={FadeInUp.delay(i * 50).duration(300)}>
-            <TouchableOpacity
-              style={styles.assignmentRow}
-              onPress={() => navigation.navigate('RecordPayment', { memberId: `member-${i}` })}
-            >
-              <Avatar name={`Villager ${i + 1}`} size={40} />
-              <View style={styles.assignmentInfo}>
-                <Text style={styles.assignmentName}>Villager {i + 1}</Text>
-                <Text style={styles.assignmentAmount}>₹1,000 due</Text>
-              </View>
-              <Badge label="Pending" color={colors.textMuted} />
-            </TouchableOpacity>
-          </Animated.View>
-        ))}
+        {filteredAssignments.map((member: any, i: number) => {
+          const paid = paymentMap[member.id] || 0;
+          const due = Number(member.amount_due);
+          const villagerName = member.villagers?.name ?? 'Villager';
+          const collectionName = member.collections?.name ?? 'Collection';
+          const statusLabel = paid >= due ? 'Done' : paid > 0 ? 'Partial' : 'Pending';
+          const statusColor = paid >= due ? colors.secondary : paid > 0 ? colors.warning : colors.textMuted;
+          return (
+            <Animated.View key={member.id} entering={FadeInUp.delay(i * 50).duration(300)}>
+              <TouchableOpacity
+                style={styles.assignmentRow}
+                onPress={() => navigation.navigate('RecordPayment', { memberId: member.id })}
+              >
+                <Avatar name={villagerName} size={40} />
+                <View style={styles.assignmentInfo}>
+                  <Text style={styles.assignmentName}>{villagerName}</Text>
+                  <Text style={styles.assignmentAmount}>{formatCurrency(due)} due</Text>
+                  {collectionName && <Text style={styles.collectionLabel}>{collectionName}</Text>}
+                </View>
+                <Badge label={statusLabel} color={statusColor} />
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        })}
+        {filteredAssignments.length === 0 && (
+          <Card glass>
+            <Text style={styles.emptyText}>No assignments match this filter.</Text>
+          </Card>
+        )}
       </ScrollView>
     </View>
   );
@@ -188,5 +234,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     marginTop: 2,
+  },
+  collectionLabel: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 11,
+    color: colors.primary,
+    marginTop: 2,
+  },
+  emptyText: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: spacing.xxl,
   },
 });

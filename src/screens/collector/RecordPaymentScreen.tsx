@@ -1,10 +1,11 @@
 import React, { useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Avatar, Button, Badge, Card } from '../../components/common';
+import Toast from 'react-native-toast-message';
 import { formatCurrency } from '../../utils/currency';
 import { getCurrentMonthLabel } from '../../utils/dates';
 import { useSMS } from '../../hooks/useSMS';
@@ -86,7 +87,7 @@ export function RecordPaymentScreen({ route, navigation }: any) {
 
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert('Error', err?.message ?? err?.error ?? 'Failed to record payment');
+      Toast.show({ type: 'error', text1: err?.message ?? err?.error ?? 'Failed to record payment' });
     }
   }, [
     amount, enteredAmount, memberId, paymentType, note, collector,

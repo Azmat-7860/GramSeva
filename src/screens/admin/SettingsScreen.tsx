@@ -1,18 +1,49 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing } from '../../constants/spacing';
 import { Card, Input, Button } from '../../components/common';
+import Toast from 'react-native-toast-message';
+import { useAppSelector } from '../../store/store';
+import { supabase } from '../../store/supabaseClient';
 
 export function SettingsScreen({ navigation }: any) {
-  const [villageName, setVillageName] = useState('GramSeva Village');
+  const { villageId, email } = useAppSelector((state) => state.auth);
+  const [villageName, setVillageName] = useState('');
   const [dailyCap, setDailyCap] = useState('50');
-  const adminEmail = 'admin@village.com';
+  const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const handleSave = () => {
-    // would persist to Supabase
+  useEffect(() => {
+    if (!villageId) return;
+    supabase
+      .from('villages')
+      .select('name, daily_sms_cap')
+      .eq('id', villageId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setVillageName(data.name);
+          setDailyCap(String(data.daily_sms_cap ?? 50));
+        }
+      });
+  }, [villageId]);
+
+  const handleSave = async () => {
+    if (!villageId || !villageName) return;
+    setLoading(true);
+    const { error } = await supabase
+      .from('villages')
+      .update({ name: villageName, daily_sms_cap: parseInt(dailyCap, 10) || 50 })
+      .eq('id', villageId);
+    setLoading(false);
+    if (error) {
+      Toast.show({ type: 'error', text1: error.message });
+    } else {
+      Toast.show({ type: 'success', text1: 'Village settings updated successfully.' });
+    }
   };
 
   const handleDeleteVillage = () => {
@@ -21,7 +52,22 @@ export function SettingsScreen({ navigation }: any) {
       'This action cannot be undone. All data will be permanently deleted.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => {} },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (!villageId) return;
+            setDeleting(true);
+            const { error } = await supabase
+              .from('villages')
+              .delete()
+              .eq('id', villageId);
+            setDeleting(false);
+            if (error) {
+              Toast.show({ type: 'error', text1: error.message });
+            }
+          },
+        },
       ]
     );
   };
@@ -35,14 +81,20 @@ export function SettingsScreen({ navigation }: any) {
           <Text style={styles.sectionTitle}>General</Text>
           <Card glass>
             <Input label="Village Name" value={villageName} onChangeText={setVillageName} />
-            <Input label="Admin Email" value={adminEmail} editable={false} />
+            <Input label="Admin Email" value={email ?? ''} editable={false} />
             <Input
               label="Daily SMS Cap"
               value={dailyCap}
               onChangeText={setDailyCap}
               keyboardType="number-pad"
             />
-            <Button title="Save Changes" onPress={handleSave} fullWidth />
+            <Button
+              title="Save Changes"
+              onPress={handleSave}
+              loading={loading}
+              disabled={!villageName}
+              fullWidth
+            />
           </Card>
         </Animated.View>
 
@@ -60,7 +112,13 @@ export function SettingsScreen({ navigation }: any) {
             <Text style={styles.dangerText}>
               Deleting your village will remove all collections, villagers, and payment records.
             </Text>
-            <Button title="Delete Village" onPress={handleDeleteVillage} variant="danger" fullWidth />
+            <Button
+              title="Delete Village"
+              onPress={handleDeleteVillage}
+              variant="danger"
+              loading={deleting}
+              fullWidth
+            />
           </Card>
         </Animated.View>
       </ScrollView>

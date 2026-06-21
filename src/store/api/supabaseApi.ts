@@ -168,6 +168,18 @@ export const supabaseApi = createApi({
       providesTags: ['CollectionMembers'],
     }),
 
+    getCollectionMembersWithVillagers: builder.query<any[], string>({
+      queryFn: async (collectionId) => {
+        const { data, error } = await supabase
+          .from('collection_members')
+          .select('*, villagers(name, phone)')
+          .eq('collection_id', collectionId);
+        if (error) return { error };
+        return { data: data ?? [] };
+      },
+      providesTags: ['CollectionMembers'],
+    }),
+
     getCollectionMemberDetail: builder.query<any, string>({
       queryFn: async (memberId) => {
         const { data, error } = await supabase
@@ -181,6 +193,32 @@ export const supabaseApi = createApi({
       providesTags: ['CollectionMembers'],
     }),
 
+    getCollection: builder.query<Collection, string>({
+      queryFn: async (id) => {
+        const { data, error } = await supabase
+          .from('collections')
+          .select('*')
+          .eq('id', id)
+          .single();
+        if (error) return { error };
+        return { data };
+      },
+      providesTags: ['Collections'],
+    }),
+
+    // ─── Collector Assignments ─────────────────────────────
+    getCollectorAssignments: builder.query<any[], string>({
+      queryFn: async (collectorId) => {
+        const { data, error } = await supabase
+          .from('collection_members')
+          .select('*, villagers(name, phone), collections(name, status)')
+          .eq('collector_id', collectorId);
+        if (error) return { error };
+        return { data: data ?? [] };
+      },
+      providesTags: ['CollectionMembers'],
+    }),
+
     // ─── Payments ────────────────────────────────────────────
     getPaymentsForCollection: builder.query<Payment[], string>({ // collection_member_id
       queryFn: async (collectionMemberId) => {
@@ -188,6 +226,50 @@ export const supabaseApi = createApi({
           .from('payments')
           .select('*')
           .eq('collection_member_id', collectionMemberId)
+          .order('paid_at', { ascending: false });
+        if (error) return { error };
+        return { data: data ?? [] };
+      },
+      providesTags: ['Payments'],
+    }),
+
+    getPaymentsByCollection: builder.query<Payment[], string>({
+      queryFn: async (collectionId) => {
+        const { data: members } = await supabase
+          .from('collection_members')
+          .select('id')
+          .eq('collection_id', collectionId);
+        if (!members?.length) return { data: [] };
+        const memberIds = members.map((m) => m.id);
+        const { data, error } = await supabase
+          .from('payments')
+          .select('*')
+          .in('collection_member_id', memberIds)
+          .order('paid_at', { ascending: false });
+        if (error) return { error };
+        return { data: data ?? [] };
+      },
+      providesTags: ['Payments'],
+    }),
+
+    getPaymentsByVillage: builder.query<Payment[], string>({
+      queryFn: async (villageId) => {
+        const { data: collections } = await supabase
+          .from('collections')
+          .select('id')
+          .eq('village_id', villageId);
+        if (!collections?.length) return { data: [] };
+        const collectionIds = collections.map((c) => c.id);
+        const { data: members } = await supabase
+          .from('collection_members')
+          .select('id')
+          .in('collection_id', collectionIds);
+        if (!members?.length) return { data: [] };
+        const memberIds = members.map((m) => m.id);
+        const { data, error } = await supabase
+          .from('payments')
+          .select('*, collection_members!inner(collection_id)')
+          .in('collection_member_id', memberIds)
           .order('paid_at', { ascending: false });
         if (error) return { error };
         return { data: data ?? [] };
@@ -258,6 +340,53 @@ export const supabaseApi = createApi({
     }),
 
     // ─── Reminders ──────────────────────────────────────────
+    getDashboardStats: builder.query<any, string>({
+      queryFn: async (villageId) => {
+        const { data: collections } = await supabase
+          .from('collections')
+          .select('id')
+          .eq('village_id', villageId)
+          .eq('status', 'active');
+        if (!collections?.length) {
+          return { data: { totalCollected: 0, totalPending: 0, collectionStats: [] } };
+        }
+        const collIds = collections.map((c) => c.id);
+        const { data: members } = await supabase
+          .from('collection_members')
+          .select('id, collection_id, amount_due')
+          .in('collection_id', collIds);
+        if (!members?.length) {
+          return { data: { totalCollected: 0, totalPending: 0, collectionStats: [] } };
+        }
+        const memberIds = members.map((m) => m.id);
+        const memberToColl: Record<string, string> = {};
+        const perCollTotal: Record<string, number> = {};
+        members.forEach((m) => {
+          memberToColl[m.id] = m.collection_id;
+          perCollTotal[m.collection_id] = (perCollTotal[m.collection_id] || 0) + Number(m.amount_due);
+        });
+        const totalDue = members.reduce((s, m) => s + Number(m.amount_due), 0);
+        const { data: payments } = await supabase
+          .from('payments')
+          .select('amount_paid, collection_member_id')
+          .in('collection_member_id', memberIds);
+        const perCollPaid: Record<string, number> = {};
+        let totalCollected = 0;
+        payments?.forEach((p) => {
+          totalCollected += Number(p.amount_paid);
+          const cId = memberToColl[p.collection_member_id];
+          if (cId) perCollPaid[cId] = (perCollPaid[cId] || 0) + Number(p.amount_paid);
+        });
+        const collectionStats = collIds.map((id) => ({
+          id,
+          collected: perCollPaid[id] || 0,
+          total: perCollTotal[id] || 0,
+        }));
+        return { data: { totalCollected, totalPending: totalDue - totalCollected, collectionStats } };
+      },
+      providesTags: ['Payments', 'Collections', 'CollectionMembers'],
+    }),
+
     getReminderQueue: builder.query<CollectionMember[], void>({
       queryFn: async () => {
         const today = new Date().getDate();
@@ -297,12 +426,18 @@ export const {
   useCreateCollectionMutation,
   useCloseCollectionMutation,
   useGetCollectionMembersQuery,
+  useGetCollectionMembersWithVillagersQuery,
   useGetCollectionMemberDetailQuery,
+  useGetCollectionQuery,
+  useGetCollectorAssignmentsQuery,
   useGetPaymentsForCollectionQuery,
+  useGetPaymentsByCollectionQuery,
+  useGetPaymentsByVillageQuery,
   useRecordPaymentMutation,
   useUpdatePaymentMutation,
   useGetAggregateTotalQuery,
   useGetVillagerHistoryQuery,
+  useGetDashboardStatsQuery,
   useGetReminderQueueQuery,
   useResetCollectorPinMutation,
 } = supabaseApi;

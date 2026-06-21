@@ -1,18 +1,23 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Avatar, Button, Input, Badge } from '../../components/common';
-import { useGetCollectorsQuery, useAddCollectorMutation } from '../../store/api/supabaseApi';
+import { useGetCollectorsQuery, useAddCollectorMutation, useResetCollectorPinMutation } from '../../store/api/supabaseApi';
+import Toast from 'react-native-toast-message';
 import { useAppSelector } from '../../store/store';
 
 export function CollectorsScreen({ navigation }: any) {
   const { villageId } = useAppSelector((state) => state.auth);
   const { data: collectors = [] } = useGetCollectorsQuery(villageId ?? '');
   const [addCollector, { isLoading }] = useAddCollectorMutation();
+  const [resetCollectorPin, { isLoading: resetting }] = useResetCollectorPinMutation();
   const [modalVisible, setModalVisible] = useState(false);
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetCollectorId, setResetCollectorId] = useState<string | null>(null);
+  const [newPin, setNewPin] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
 
@@ -24,7 +29,20 @@ export function CollectorsScreen({ navigation }: any) {
       setPhone('');
       setModalVisible(false);
     } catch (err: any) {
-      Alert.alert('Error', err?.message ?? err?.error ?? 'Failed to add collector');
+      Toast.show({ type: 'error', text1: err?.message ?? err?.error ?? 'Failed to add collector' });
+    }
+  };
+
+  const handleResetPin = async () => {
+    if (!resetCollectorId || newPin.length < 4) return;
+    try {
+      await resetCollectorPin({ collectorId: resetCollectorId, newPin }).unwrap();
+      setResetModalVisible(false);
+      setNewPin('');
+      setResetCollectorId(null);
+      Toast.show({ type: 'success', text1: 'PIN has been reset.' });
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: err?.message ?? err?.error ?? 'Failed to reset PIN' });
     }
   };
 
@@ -49,7 +67,14 @@ export function CollectorsScreen({ navigation }: any) {
                 color={c.pin_hash ? colors.secondary : colors.warning}
                 size="sm"
               />
-              <TouchableOpacity style={styles.resetBtn}>
+              <TouchableOpacity
+                style={styles.resetBtn}
+                onPress={() => {
+                  setResetCollectorId(c.id);
+                  setNewPin('');
+                  setResetModalVisible(true);
+                }}
+              >
                 <Text style={styles.resetText}>Reset</Text>
               </TouchableOpacity>
             </TouchableOpacity>
@@ -60,6 +85,37 @@ export function CollectorsScreen({ navigation }: any) {
       <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)} activeOpacity={0.8}>
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
+
+      <Modal visible={resetModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Reset Collector PIN</Text>
+            <Input
+              label="New 4-digit PIN"
+              placeholder="0000"
+              value={newPin}
+              onChangeText={setNewPin}
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+            <View style={styles.modalActions}>
+              <Button
+                title="Cancel"
+                onPress={() => { setResetModalVisible(false); setResetCollectorId(null); }}
+                variant="ghost"
+                style={{ flex: 1 }}
+              />
+              <Button
+                title="Reset PIN"
+                onPress={handleResetPin}
+                loading={resetting}
+                disabled={newPin.length < 4}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>

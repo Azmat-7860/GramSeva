@@ -1,4 +1,4 @@
-module.exports = {
+export default {
   name: 'GramSeva',
   slug: 'gramseva',
   version: '1.0.0',

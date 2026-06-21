@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Card, Badge, Button } from '../../components/common';
 import { ProgressRing, PaymentRow } from '../../components/collections';
-import { useGetCollectionMembersQuery, useCloseCollectionMutation } from '../../store/api/supabaseApi';
+import {
+  useGetCollectionQuery,
+  useGetCollectionMembersWithVillagersQuery,
+  useGetPaymentsByCollectionQuery,
+  useCloseCollectionMutation,
+} from '../../store/api/supabaseApi';
+import Toast from 'react-native-toast-message';
 import { formatCurrency } from '../../utils/currency';
 import { formatDate } from '../../utils/dates';
 
@@ -14,14 +20,43 @@ type FilterType = 'all' | 'paid' | 'partial' | 'pending' | 'overdue';
 
 export function CollectionDetailScreen({ route, navigation }: any) {
   const { collectionId } = route.params;
-  const { data: members = [] } = useGetCollectionMembersQuery(collectionId);
+  const { data: collection } = useGetCollectionQuery(collectionId);
+  const { data: members = [] } = useGetCollectionMembersWithVillagersQuery(collectionId);
+  const { data: payments = [] } = useGetPaymentsByCollectionQuery(collectionId);
   const [closeCollection, { isLoading: closing }] = useCloseCollectionMutation();
   const [filter, setFilter] = useState<FilterType>('all');
 
-  const collection = { name: 'Collection', type: 'recurring', status: 'active', created_at: new Date().toISOString() };
+  const totalDue = useMemo(
+    () => members.reduce((sum, m: any) => sum + Number(m.amount_due), 0),
+    [members]
+  );
 
-  const totalDue = members.reduce((sum, m) => sum + Number(m.amount_due), 0);
-  const totalPaid = 0;
+  const totalPaid = useMemo(
+    () => payments.reduce((sum, p) => sum + Number(p.amount_paid), 0),
+    [payments]
+  );
+
+  const paymentMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    payments.forEach((p) => {
+      map[p.collection_member_id] = (map[p.collection_member_id] || 0) + Number(p.amount_paid);
+    });
+    return map;
+  }, [payments]);
+
+  const filteredMembers = useMemo(() => {
+    return members.filter((m: any) => {
+      const paid = paymentMap[m.id] || 0;
+      const due = Number(m.amount_due);
+      switch (filter) {
+        case 'paid': return paid >= due;
+        case 'partial': return paid > 0 && paid < due;
+        case 'pending': return paid === 0;
+        case 'overdue': return paid === 0;
+        default: return true;
+      }
+    });
+  }, [members, paymentMap, filter]);
 
   const tabs: { key: FilterType; label: string }[] = [
     { key: 'all', label: 'All' },
@@ -39,15 +74,18 @@ export function CollectionDetailScreen({ route, navigation }: any) {
             <TouchableOpacity onPress={() => navigation.goBack()}>
               <Text style={styles.backText}>← Back</Text>
             </TouchableOpacity>
-            <Badge label={collection.status} color={collection.status === 'active' ? colors.secondary : colors.textMuted} />
+            <Badge
+              label={collection?.status ?? 'active'}
+              color={(collection?.status ?? 'active') === 'active' ? colors.secondary : colors.textMuted}
+            />
           </View>
 
-          <Text style={styles.title}>{collection.name}</Text>
+          <Text style={styles.title}>{collection?.name ?? 'Collection'}</Text>
           <Badge
-            label={collection.type === 'recurring' ? 'Monthly' : 'One-time'}
+            label={(collection?.type ?? 'recurring') === 'recurring' ? 'Monthly' : 'One-time'}
             color={colors.primary}
           />
-          <Text style={styles.date}>{formatDate(collection.created_at)}</Text>
+          <Text style={styles.date}>{formatDate(collection?.created_at ?? new Date().toISOString())}</Text>
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(100).duration(400)} style={styles.ringContainer}>
@@ -83,19 +121,23 @@ export function CollectionDetailScreen({ route, navigation }: any) {
           ))}
         </View>
 
-        {members.map((member, i) => (
-          <Animated.View key={member.id} entering={FadeInUp.delay(i * 50).duration(300)}>
-            <PaymentRow
-              name="Villager"
-              amountDue={Number(member.amount_due)}
-              totalPaid={0}
-              onPress={() => navigation.navigate('VillagerPaymentDetail', { memberId: member.id })}
-            />
-          </Animated.View>
-        ))}
+        {filteredMembers.map((member: any, i: number) => {
+          const paid = paymentMap[member.id] || 0;
+          const villagerName = member.villagers?.name ?? 'Villager';
+          return (
+            <Animated.View key={member.id} entering={FadeInUp.delay(i * 50).duration(300)}>
+              <PaymentRow
+                name={villagerName}
+                amountDue={Number(member.amount_due)}
+                totalPaid={paid}
+                onPress={() => navigation.navigate('VillagerPaymentDetail', { memberId: member.id })}
+              />
+            </Animated.View>
+          );
+        })}
       </ScrollView>
 
-      {collection.status === 'active' && (
+      {collection?.status === 'active' && (
         <View style={styles.footer}>
           <Button
             title="Close Collection"
@@ -103,7 +145,7 @@ export function CollectionDetailScreen({ route, navigation }: any) {
               try {
                 await closeCollection(collectionId).unwrap();
               } catch (err: any) {
-                Alert.alert('Error', err?.message ?? err?.error ?? 'Failed to close collection');
+                Toast.show({ type: 'error', text1: err?.message ?? err?.error ?? 'Failed to close collection' });
               }
             }}
             loading={closing}

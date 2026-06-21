@@ -5,10 +5,13 @@ function createSupabaseClient(): SupabaseClient {
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn(
-      'Supabase credentials not found. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env file.'
+    throw new Error(
+      'Missing Supabase credentials. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env file.'
     );
-    return createClient('https://placeholder.supabase.co', 'placeholder-key');
+  }
+
+  if (!supabaseUrl.startsWith('https://') || supabaseUrl === 'https://placeholder.supabase.co') {
+    throw new Error('Invalid EXPO_PUBLIC_SUPABASE_URL. Set a valid Supabase project URL in your .env file.');
   }
 
   return createClient(supabaseUrl, supabaseAnonKey);

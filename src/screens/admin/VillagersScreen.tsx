@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
 import { Card, Avatar, Button, Input } from '../../components/common';
 import { useGetVillagersQuery, useAddVillagerMutation } from '../../store/api/supabaseApi';
+import Toast from 'react-native-toast-message';
 import { useAppSelector } from '../../store/store';
 
 export function VillagersScreen({ navigation }: any) {
@@ -29,7 +30,7 @@ export function VillagersScreen({ navigation }: any) {
       setPhone('');
       setModalVisible(false);
     } catch (err: any) {
-      Alert.alert('Error', err?.message ?? err?.error ?? 'Failed to add villager');
+      Toast.show({ type: 'error', text1: err?.message ?? err?.error ?? 'Failed to add villager' });
     }
   };
 

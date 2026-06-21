@@ -23,6 +23,7 @@ import {
 
 import { store } from './src/store/store';
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { Toast } from './src/components/common/Toast';
 
 try {
   const SplashScreen = require('expo-splash-screen');
@@ -68,6 +69,7 @@ export default function App() {
         <SafeAreaProvider>
           <StatusBar style="light" />
           <AppNavigator />
+          <Toast />
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </Provider>

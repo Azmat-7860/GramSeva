@@ -8,10 +8,11 @@ import { Card } from '../../components/common';
 import { CollectionCard } from '../../components/collections';
 import { AmbientMesh } from '../../components/three/AmbientMesh';
 import { AnimatedCounter } from '../../components/charts';
-import { useGetCollectionsQuery, useGetVillagersQuery } from '../../store/api/supabaseApi';
+import { useGetCollectionsQuery, useGetDashboardStatsQuery } from '../../store/api/supabaseApi';
 import { useAppDispatch, useAppSelector } from '../../store/store';
 import { clearSession } from '../../store/slices/authSlice';
 import { formatCurrency } from '../../utils/currency';
+import { useMemo } from 'react';
 
 interface AdminDashboardScreenProps {
   navigation: any;
@@ -22,10 +23,16 @@ export function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) 
   const { email, villageId, villageName } = useAppSelector((state) => state.auth);
 
   const { data: collections = [] } = useGetCollectionsQuery(villageId ?? '');
-  const { data: villagers = [] } = useGetVillagersQuery(villageId ?? '');
+  const { data: stats } = useGetDashboardStatsQuery(villageId ?? '', { skip: !villageId });
 
-  const totalCollected = 0; // would compute from payments
-  const totalPending = 0;
+  const totalCollected = stats?.totalCollected ?? 0;
+  const totalPending = stats?.totalPending ?? 0;
+
+  const statsMap = useMemo(() => {
+    const map: Record<string, { collected: number; total: number }> = {};
+    stats?.collectionStats?.forEach((s: any) => { map[s.id] = s; });
+    return map;
+  }, [stats]);
 
   return (
     <View style={styles.container}>
@@ -72,8 +79,8 @@ export function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) 
               <CollectionCard
                 key={collection.id}
                 collection={collection}
-                collected={0}
-                total={0}
+                collected={statsMap[collection.id]?.collected ?? 0}
+                total={statsMap[collection.id]?.total ?? 0}
                 index={index}
                 onPress={() =>
                   navigation.navigate('CollectionDetail', { collectionId: collection.id })

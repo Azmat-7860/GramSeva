@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
@@ -7,9 +7,28 @@ import { spacing } from '../../constants/spacing';
 import { Card, Badge, Button } from '../../components/common';
 import { formatCurrency } from '../../utils/currency';
 import { formatDate } from '../../utils/dates';
+import {
+  useGetCollectionMemberDetailQuery,
+  useGetPaymentsForCollectionQuery,
+} from '../../store/api/supabaseApi';
 
 export function VillagerPaymentDetailScreen({ route, navigation }: any) {
   const { memberId } = route.params;
+
+  const { data: member } = useGetCollectionMemberDetailQuery(memberId);
+  const { data: payments = [] } = useGetPaymentsForCollectionQuery(memberId);
+
+  const villagerData: { name: string; phone: string } | null =
+    (member?.villagers as any) ?? null;
+  const collectionData: { name: string } | null =
+    (member?.collections as any) ?? null;
+
+  const amountDue = Number(member?.amount_due ?? 0);
+  const totalPaid = useMemo(
+    () => payments.reduce((s, p) => s + Number(p.amount_paid), 0),
+    [payments]
+  );
+  const balance = amountDue - totalPaid;
 
   return (
     <View style={styles.container}>
@@ -19,19 +38,24 @@ export function VillagerPaymentDetailScreen({ route, navigation }: any) {
         </TouchableOpacity>
 
         <Animated.View entering={FadeInUp.duration(400)}>
-          <Text style={styles.title}>Villager Name</Text>
+          <Text style={styles.title}>{villagerData?.name ?? 'Villager'}</Text>
+          {collectionData && (
+            <Text style={styles.collectionName}>{collectionData.name}</Text>
+          )}
           <View style={styles.balanceRow}>
             <View style={styles.balanceItem}>
               <Text style={styles.balanceLabel}>Total Due</Text>
-              <Text style={styles.balanceValue}>{formatCurrency(1000)}</Text>
+              <Text style={styles.balanceValue}>{formatCurrency(amountDue)}</Text>
             </View>
             <View style={styles.balanceItem}>
               <Text style={styles.balanceLabel}>Total Paid</Text>
-              <Text style={[styles.balanceValue, { color: colors.secondary }]}>{formatCurrency(500)}</Text>
+              <Text style={[styles.balanceValue, { color: colors.secondary }]}>{formatCurrency(totalPaid)}</Text>
             </View>
             <View style={styles.balanceItem}>
               <Text style={styles.balanceLabel}>Balance</Text>
-              <Text style={[styles.balanceValue, { color: colors.warning }]}>{formatCurrency(500)}</Text>
+              <Text style={[styles.balanceValue, { color: balance > 0 ? colors.warning : colors.secondary }]}>
+                {formatCurrency(Math.max(0, balance))}
+              </Text>
             </View>
           </View>
         </Animated.View>
@@ -39,7 +63,22 @@ export function VillagerPaymentDetailScreen({ route, navigation }: any) {
         <Animated.View entering={FadeInUp.delay(100).duration(400)}>
           <Text style={styles.sectionTitle}>Payment History</Text>
           <Card glass>
-            <Text style={styles.emptyText}>No payments recorded yet.</Text>
+            {payments.length === 0 ? (
+              <Text style={styles.emptyText}>No payments recorded yet.</Text>
+            ) : (
+              payments.map((p, i) => (
+                <View key={p.id} style={styles.historyItem}>
+                  <View style={styles.historyLeft}>
+                    <Text style={styles.historyDate}>{formatDate(p.paid_at)}</Text>
+                    <Badge label={p.payment_type} color={
+                      p.payment_type === 'full' ? colors.secondary :
+                      p.payment_type === 'partial' ? colors.warning : colors.primary
+                    } size="sm" />
+                  </View>
+                  <Text style={styles.historyAmount}>{formatCurrency(Number(p.amount_paid))}</Text>
+                </View>
+              ))
+            )}
           </Card>
         </Animated.View>
 
@@ -52,7 +91,11 @@ export function VillagerPaymentDetailScreen({ route, navigation }: any) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button title="Record Payment" onPress={() => {}} fullWidth />
+        <Button
+          title="Record Payment"
+          onPress={() => navigation.navigate('RecordPayment', { memberId })}
+          fullWidth
+        />
       </View>
     </View>
   );
@@ -80,6 +123,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.poppins.bold,
     fontSize: 24,
     color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  collectionName: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 14,
+    color: colors.primary,
     marginBottom: spacing.xl,
   },
   balanceRow: {
@@ -115,6 +164,27 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
     paddingVertical: spacing.xxl,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  historyLeft: {
+    gap: spacing.xs,
+  },
+  historyDate: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  historyAmount: {
+    fontFamily: fonts.jetbrainsMono.medium,
+    fontSize: 16,
+    color: colors.textPrimary,
   },
   footer: {
     paddingHorizontal: spacing.xl,
