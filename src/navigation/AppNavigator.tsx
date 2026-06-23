@@ -19,6 +19,7 @@ import { VillagersScreen } from '../screens/admin/VillagersScreen';
 import { CollectorsScreen } from '../screens/admin/CollectorsScreen';
 import { SettingsScreen } from '../screens/admin/SettingsScreen';
 import { CollectorDashboardScreen } from '../screens/collector/CollectorDashboardScreen';
+import { CollectorCollectionDetailScreen } from '../screens/collector/CollectorCollectionDetailScreen';
 import { RecordPaymentScreen } from '../screens/collector/RecordPaymentScreen';
 import { PublicCollectionViewScreen } from '../screens/public/PublicCollectionViewScreen';
 import { VillagerHistoryScreen } from '../screens/public/VillagerHistoryScreen';
@@ -130,6 +131,7 @@ function CollectorStack() {
       }}
     >
       <Stack.Screen name="CollectorDashboard" component={CollectorDashboardScreen} />
+      <Stack.Screen name="CollectorCollectionDetail" component={CollectorCollectionDetailScreen} />
       <Stack.Screen name="RecordPayment" component={RecordPaymentScreen} />
     </Stack.Navigator>
   );

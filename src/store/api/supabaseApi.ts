@@ -21,6 +21,7 @@ export const supabaseApi = createApi({
     'CollectionMembers',
     'Payments',
     'Aggregate',
+    'CollectionCollectors',
   ],
   endpoints: (builder) => ({
     // ─── Villagers ──────────────────────────────────────────
@@ -219,6 +220,23 @@ export const supabaseApi = createApi({
       providesTags: ['CollectionMembers'],
     }),
 
+    addCollectionMember: builder.mutation<any, {
+      collection_id: string;
+      villager_id: string;
+      amount_due: number;
+    }>({
+      queryFn: async (payload) => {
+        const { data, error } = await supabase
+          .from('collection_members')
+          .insert(payload)
+          .select()
+          .single();
+        if (error) return { error };
+        return { data };
+      },
+      invalidatesTags: ['CollectionMembers'],
+    }),
+
     getCollection: builder.query<Collection, string>({
       queryFn: async (id) => {
         const { data, error } = await supabase
@@ -235,14 +253,23 @@ export const supabaseApi = createApi({
     // ─── Collector Assignments ─────────────────────────────
     getCollectorAssignments: builder.query<any[], string>({
       queryFn: async (collectorId) => {
+        // get collection ids from junction table
+        const { data: links } = await supabase
+          .from('collection_collectors')
+          .select('collection_id')
+          .eq('collector_id', collectorId);
+        if (!links?.length) return { data: [] };
+
+        const collIds = links.map((l) => l.collection_id);
+        // get all members of those collections
         const { data, error } = await supabase
           .from('collection_members')
-          .select('*, villagers(name, phone), collections(name, status)')
-          .eq('collector_id', collectorId);
+          .select('*, villagers(name, phone), collections!inner(id, name, status, type, village_id, target_amount, created_at), payments(amount_paid, paid_at)')
+          .in('collection_id', collIds);
         if (error) return { error };
         return { data: data ?? [] };
       },
-      providesTags: ['CollectionMembers'],
+      providesTags: ['CollectionMembers', 'CollectionCollectors'],
     }),
 
     // ─── Payments ────────────────────────────────────────────
@@ -259,7 +286,7 @@ export const supabaseApi = createApi({
       providesTags: ['Payments'],
     }),
 
-    getPaymentsByCollection: builder.query<Payment[], string>({
+    getPaymentsByCollection: builder.query<any[], string>({
       queryFn: async (collectionId) => {
         const { data: members } = await supabase
           .from('collection_members')
@@ -269,7 +296,7 @@ export const supabaseApi = createApi({
         const memberIds = members.map((m) => m.id);
         const { data, error } = await supabase
           .from('payments')
-          .select('*')
+          .select('*, collectors(name)')
           .in('collection_member_id', memberIds)
           .order('paid_at', { ascending: false });
         if (error) return { error };
@@ -438,6 +465,56 @@ export const supabaseApi = createApi({
       },
       invalidatesTags: ['Collectors'],
     }),
+
+    // ─── Collection Collectors ───────────────────────────────
+    getCollectionCollectors: builder.query<any[], string>({
+      queryFn: async (collectionId) => {
+        const { data, error } = await supabase
+          .from('collection_collectors')
+          .select('*, collectors(id, name, phone)')
+          .eq('collection_id', collectionId);
+        if (error) return { error };
+        return { data: data ?? [] };
+      },
+      providesTags: ['CollectionCollectors'],
+    }),
+
+    addCollectorToCollection: builder.mutation<any, { collection_id: string; collector_id: string }>({
+      queryFn: async (payload) => {
+        const { data, error } = await supabase
+          .from('collection_collectors')
+          .insert(payload)
+          .select()
+          .single();
+        if (error) return { error };
+        return { data };
+      },
+      invalidatesTags: ['CollectionCollectors'],
+    }),
+
+    removeCollectorFromCollection: builder.mutation<null, string>({
+      queryFn: async (id) => {
+        const { error } = await supabase
+          .from('collection_collectors')
+          .delete()
+          .eq('id', id);
+        if (error) return { error };
+        return { data: null };
+      },
+      invalidatesTags: ['CollectionCollectors'],
+    }),
+
+    getCollectorCollections: builder.query<any[], string>({
+      queryFn: async (collectorId) => {
+        const { data, error } = await supabase
+          .from('collection_collectors')
+          .select('*, collections(id, name, type, status, village_id, target_amount, created_at, villages(name))')
+          .eq('collector_id', collectorId);
+        if (error) return { error };
+        return { data: data ?? [] };
+      },
+      providesTags: ['CollectionCollectors', 'Collections'],
+    }),
   }),
 });
 
@@ -456,6 +533,7 @@ export const {
   useGetCollectionMembersQuery,
   useGetCollectionMembersWithVillagersQuery,
   useGetCollectionMemberDetailQuery,
+  useAddCollectionMemberMutation,
   useGetCollectionQuery,
   useGetCollectorAssignmentsQuery,
   useGetPaymentsForCollectionQuery,
@@ -468,4 +546,8 @@ export const {
   useGetDashboardStatsQuery,
   useGetReminderQueueQuery,
   useResetCollectorPinMutation,
+  useGetCollectionCollectorsQuery,
+  useAddCollectorToCollectionMutation,
+  useRemoveCollectorFromCollectionMutation,
+  useGetCollectorCollectionsQuery,
 } = supabaseApi;

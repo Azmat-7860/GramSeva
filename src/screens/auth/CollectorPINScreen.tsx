@@ -96,7 +96,7 @@ export function CollectorPINScreen({ route }: CollectorPINScreenProps) {
       ['1', '2', '3'],
       ['4', '5', '6'],
       ['7', '8', '9'],
-      ['', '0', 'DEL'],
+      [ '0', ],
     ];
 
     return (
@@ -136,32 +136,35 @@ export function CollectorPINScreen({ route }: CollectorPINScreenProps) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Enter PIN</Text>
-      <Text style={styles.subtitle}>Enter your 4-digit collector PIN</Text>
+      <View style={styles.topSection}>
+        <Text style={styles.title}>Enter PIN</Text>
+        <Text style={styles.subtitle}>Enter your 4-digit collector PIN</Text>
 
-      <Animated.View style={[styles.dotsContainer, shakeStyle]}>
-        {renderDots()}
-      </Animated.View>
+        <Animated.View style={[styles.dotsContainer, shakeStyle]}>
+          {renderDots()}
+        </Animated.View>
 
-      {error && (
-        <Animated.Text
-          entering={FadeInUp.duration(200)}
-          exiting={FadeOutDown.duration(200)}
-          style={styles.errorText}
-        >
-          Wrong PIN. Try again.
-        </Animated.Text>
-      )}
+        {error && (
+          <Animated.Text
+            entering={FadeInUp.duration(200)}
+            exiting={FadeOutDown.duration(200)}
+            style={styles.errorText}
+          >
+            Wrong PIN. Try again.
+          </Animated.Text>
+        )}
 
-      {loading && (
-        <Text style={styles.loadingText}>Verifying...</Text>
-      )}
+        {loading && (
+          <Text style={styles.loadingText}>Verifying...</Text>
+        )}
+      </View>
 
-      {renderNumpad()}
-
-      <Text style={styles.forgotText}>
-        Contact your admin to reset PIN
-      </Text>
+      <View style={styles.bottomSection}>
+        {renderNumpad()}
+        <Text style={styles.forgotText}>
+          Contact your admin to reset PIN
+        </Text>
+      </View>
     </View>
   );
 }
@@ -171,7 +174,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     alignItems: 'center',
+  },
+  topSection: {
+    alignItems: 'center',
     paddingTop: 80,
+  },
+  bottomSection: {
+    position: 'absolute',
+    bottom: 40,
+    alignItems: 'center',
+    width: '100%',
   },
   title: {
     fontFamily: fonts.poppins.bold,

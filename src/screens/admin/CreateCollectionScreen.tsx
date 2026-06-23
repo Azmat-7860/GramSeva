@@ -16,6 +16,8 @@ import { Button, Input, Avatar } from '../../components/common';
 import {
   useCreateCollectionMutation,
   useGetVillagersQuery,
+  useGetCollectorsQuery,
+  useAddCollectorToCollectionMutation,
 } from '../../store/api/supabaseApi';
 import { useAppSelector } from '../../store/store';
 
@@ -23,6 +25,9 @@ export function CreateCollectionScreen({ navigation }: any) {
   const { villageId } = useAppSelector((state) => state.auth);
   const { data: villagers = [] } = useGetVillagersQuery(villageId ?? '');
   const [createCollection, { isLoading }] = useCreateCollectionMutation();
+  const { data: collectors = [] } = useGetCollectorsQuery(villageId ?? '');
+  const [addCollectorToCollection] = useAddCollectorToCollectionMutation();
+  const [selectedCollectorIds, setSelectedCollectorIds] = useState<Set<string>>(new Set());
 
   const [name, setName] = useState('');
   const [type, setType] = useState<'recurring' | 'one_time'>('recurring');
@@ -46,6 +51,15 @@ export function CreateCollectionScreen({ navigation }: any) {
     }
   }, []);
 
+  const toggleCollector = useCallback((id: string) => {
+    setSelectedCollectorIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   const isInvalid =
     !name ||
     selectedIds.size === 0 ||
@@ -67,7 +81,7 @@ export function CreateCollectionScreen({ navigation }: any) {
     }
 
     try {
-      await createCollection({
+      const result = await createCollection({
         name,
         type,
         village_id: villageId,
@@ -79,6 +93,16 @@ export function CreateCollectionScreen({ navigation }: any) {
         })),
       }).unwrap();
 
+      // assign collectors to collection
+      await Promise.all(
+        Array.from(selectedCollectorIds).map((cid) =>
+          addCollectorToCollection({
+            collection_id: result.id,
+            collector_id: cid,
+          }).unwrap()
+        )
+      );
+
       Toast.show({
         type: 'success',
         text1: `Collection "${name}" created`,
@@ -88,6 +112,7 @@ export function CreateCollectionScreen({ navigation }: any) {
       setName('');
       setSelectedIds(new Set());
       setAmounts({});
+      setSelectedCollectorIds(new Set());
 
       navigation.goBack();
     } catch (err: any) {
@@ -218,6 +243,41 @@ export function CreateCollectionScreen({ navigation }: any) {
                 )}
               </View>
             </Animated.View>
+          ))
+        )}
+
+        {/* COLLECTORS */}
+        <Text style={[styles.label, { marginTop: spacing.xl }]}>
+          Assign Collectors ({selectedCollectorIds.size})
+        </Text>
+        {collectors.length === 0 ? (
+          <Text style={{ color: colors.textMuted, marginBottom: spacing.lg }}>
+            No collectors added yet. Add collectors first.
+          </Text>
+        ) : (
+          collectors.map((c) => (
+            <TouchableOpacity
+              key={c.id}
+              style={[
+                styles.villagerRow,
+                selectedCollectorIds.has(c.id) && styles.villagerRowSelected,
+              ]}
+              onPress={() => toggleCollector(c.id)}
+            >
+              <View style={[
+                styles.checkbox,
+                selectedCollectorIds.has(c.id) && styles.checkboxSelected,
+              ]}>
+                {selectedCollectorIds.has(c.id) && (
+                  <Text style={styles.checkmark}>✓</Text>
+                )}
+              </View>
+              <Avatar name={c.name} size={34} />
+              <View style={styles.villagerInfo}>
+                <Text style={styles.villagerName}>{c.name}</Text>
+                <Text style={styles.villagerPhone}>{c.phone}</Text>
+              </View>
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>
@@ -371,6 +431,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  checkboxSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
   footer: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.lg,

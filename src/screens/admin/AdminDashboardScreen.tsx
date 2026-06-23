@@ -7,11 +7,9 @@ import { spacing, glassCard } from '../../constants/spacing';
 import { Card } from '../../components/common';
 import { CollectionCard } from '../../components/collections';
 import { AmbientMesh } from '../../components/three/AmbientMesh';
-import { AnimatedCounter } from '../../components/charts';
 import { useGetCollectionsQuery, useGetDashboardStatsQuery } from '../../store/api/supabaseApi';
 import { useAppDispatch, useAppSelector } from '../../store/store';
 import { clearSession } from '../../store/slices/authSlice';
-import { formatCurrency } from '../../utils/currency';
 import { useMemo } from 'react';
 
 interface AdminDashboardScreenProps {
@@ -25,8 +23,10 @@ export function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) 
   const { data: collections = [] } = useGetCollectionsQuery(villageId ?? '');
   const { data: stats } = useGetDashboardStatsQuery(villageId ?? '', { skip: !villageId });
 
-  const totalCollected = stats?.totalCollected ?? 0;
-  const totalPending = stats?.totalPending ?? 0;
+  const pendingCollectionCount = useMemo(
+    () => (stats?.collectionStats ?? []).filter((s: any) => s.collected < s.total).length,
+    [stats]
+  );
 
   const statsMap = useMemo(() => {
     const map: Record<string, { collected: number; total: number }> = {};
@@ -53,22 +53,18 @@ export function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) 
         <Animated.View entering={FadeInUp.delay(100).duration(600)}>
           <View style={styles.statsRow}>
             <Card glass style={styles.statCard}>
-              <Text style={styles.statLabel}>Collected</Text>
-              <AnimatedCounter value={totalCollected} style={styles.statValue} />
-            </Card>
-            <Card glass style={styles.statCard}>
               <Text style={styles.statLabel}>Pending</Text>
               <Text style={[styles.statValue, { color: colors.warning }]}>
-                {formatCurrency(totalPending)}
+                {pendingCollectionCount}
               </Text>
             </Card>
             <TouchableOpacity
               onPress={() => navigation.navigate('AllCollections')}
               activeOpacity={0.7}
+              style={{ flex: 1 }}
             >
               <Card glass style={styles.statCard}>
-                <Text style={styles.statLabel}>Collections </Text>
-                  {/* <Text style={{ color: colors.textMuted }}></Text> */}
+                <Text style={styles.statLabel}>Collections</Text>
                 <Text style={[styles.statValue, { color: colors.primary }]}>
                   {collections.length} →
                 </Text>

@@ -15,6 +15,7 @@ interface PaymentRowProps {
   amountDue: number;
   totalPaid: number;
   lastPaymentDate?: string;
+  collectorName?: string;
   isOverdue?: boolean;
   onPress?: () => void;
 }
@@ -24,6 +25,7 @@ export function PaymentRow({
   amountDue,
   totalPaid,
   lastPaymentDate,
+  collectorName,
   isOverdue = false,
   onPress,
 }: PaymentRowProps) {
@@ -44,9 +46,14 @@ export function PaymentRow({
             <Text style={styles.paid}> · {formatCurrency(totalPaid)} paid</Text>
           )}
         </View>
-        {lastPaymentDate && (
-          <Text style={styles.date}>Last: {formatDate(lastPaymentDate)}</Text>
-        )}
+        <View style={styles.metaRow}>
+          {lastPaymentDate && (
+            <Text style={styles.date}>{formatDate(lastPaymentDate)}</Text>
+          )}
+          {collectorName && (
+            <Text style={styles.collector}> · {collectorName}</Text>
+          )}
+        </View>
       </View>
       <Badge label={status.label} color={status.color} />
     </TouchableOpacity>
@@ -90,6 +97,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.regular,
     fontSize: 11,
     color: colors.textMuted,
+  },
+  collector: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 11,
+    color: colors.primary,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 2,
   },
 });

@@ -8,6 +8,7 @@ import {
   TextInput,
   Modal,
   Pressable,
+  Share,
 } from 'react-native';
 import Animated, {
   FadeInUp,
@@ -19,7 +20,8 @@ import Animated, {
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { spacing, borderRadius } from '../../constants/spacing';
-import { Badge, Button } from '../../components/common';
+import { Badge } from '../../components/common';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ProgressRing, PaymentRow } from '../../components/collections';
 import {
   useGetCollectionQuery,
@@ -28,7 +30,14 @@ import {
   useCloseCollectionMutation,
   useUpdateCollectionMutation,
   useDeleteCollectionMutation,
+  useGetVillagersQuery,
+  useGetCollectorsQuery,
+  useGetCollectionCollectorsQuery,
+  useAddCollectorToCollectionMutation,
+  useRemoveCollectorFromCollectionMutation,
+  useAddCollectionMemberMutation,
 } from '../../store/api/supabaseApi';
+import { useAppSelector } from '../../store/store';
 import Toast from 'react-native-toast-message';
 import { formatCurrency } from '../../utils/currency';
 import { formatDate } from '../../utils/dates';
@@ -37,6 +46,7 @@ type FilterType = 'all' | 'paid' | 'partial' | 'pending' | 'overdue';
 
 export function CollectionDetailScreen({ route, navigation }: any) {
   const { collectionId } = route.params;
+  const { villageId } = useAppSelector((state) => state.auth);
 
   const { data: collection } = useGetCollectionQuery(collectionId);
   const { data: members = [] } =
@@ -49,11 +59,21 @@ export function CollectionDetailScreen({ route, navigation }: any) {
   const [updateCollection] = useUpdateCollectionMutation();
   const [deleteCollection, { isLoading: deleting }] =
     useDeleteCollectionMutation();
+  const { data: allCollectors = [] } = useGetCollectorsQuery(villageId ?? '');
+  const { data: allVillagers = [] } = useGetVillagersQuery(villageId ?? '');
+  const { data: assignedCollectors = [] } = useGetCollectionCollectorsQuery(collectionId);
+  const [addCollectorToCollection] = useAddCollectorToCollectionMutation();
+  const [removeCollectorFromCollection] = useRemoveCollectorFromCollectionMutation();
+  const [addCollectionMember, { isLoading: addingMember }] = useAddCollectionMemberMutation();
 
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCollectorModal, setShowCollectorModal] = useState(false);
+  const [showVillagerModal, setShowVillagerModal] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [newVillagerAmount, setNewVillagerAmount] = useState<Record<string, string>>({});
 
   // ===== CALCULATIONS =====
   const totalDue = useMemo(
@@ -74,6 +94,30 @@ export function CollectionDetailScreen({ route, navigation }: any) {
     });
     return map;
   }, [payments]);
+
+  const lastPaymentInfo = useMemo(() => {
+    const info: Record<string, { date: string; collectorName: string | null }> = {};
+    payments.forEach((p: any) => {
+      const existing = info[p.collection_member_id];
+      if (!existing || p.paid_at > existing.date) {
+        info[p.collection_member_id] = {
+          date: p.paid_at,
+          collectorName: p.collectors?.name ?? null,
+        };
+      }
+    });
+    return info;
+  }, [payments]);
+
+  const existingVillagerIds = useMemo(
+    () => new Set(members.map((m: any) => m.villager_id)),
+    [members]
+  );
+
+  const unassignedVillagers = useMemo(
+    () => allVillagers.filter((v) => !existingVillagerIds.has(v.id)),
+    [allVillagers, existingVillagerIds]
+  );
 
   const filteredMembers = useMemo(() => {
     return members.filter((m: any) => {
@@ -103,6 +147,60 @@ export function CollectionDetailScreen({ route, navigation }: any) {
     { key: 'overdue', label: 'Overdue' },
   ];
 
+  const handleAddVillager = async (villagerId: string) => {
+    const amount = newVillagerAmount[villagerId];
+    if (!amount) {
+      Toast.show({ type: 'error', text1: 'Please enter an amount' });
+      return;
+    }
+    try {
+      await addCollectionMember({
+        collection_id: collectionId,
+        villager_id: villagerId,
+        amount_due: parseFloat(amount),
+      }).unwrap();
+      setNewVillagerAmount((prev) => {
+        const next = { ...prev };
+        delete next[villagerId];
+        return next;
+      });
+      Toast.show({ type: 'success', text1: 'Villager added to collection' });
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: err?.message ?? 'Failed to add villager' });
+    }
+  };
+
+  const handleShare = async () => {
+    const today = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+    const cName = collection?.name ?? 'Collection';
+
+    const lines = members.map((m: any) => {
+      const paid = paymentMap[m.id] || 0;
+      const due = Number(m.amount_due);
+      const status = paid >= due ? '✅ Paid' : paid > 0 ? '🟡 Partial' : '❌ Not paid';
+      return `${m.villagers?.name ?? 'Unknown'} — ${status}`;
+    });
+
+    const summary = [
+      `📅 ${today}`,
+      `📍 ${cName}`,
+      '',
+      ...lines,
+      '',
+      `───`,
+      `💰 Total Collected: ${formatCurrency(totalPaid)}`,
+      `📊 Total Pending: ${formatCurrency(Math.max(0, totalDue - totalPaid))}`,
+    ].join('\n');
+
+    try {
+      await Share.share({ message: summary });
+    } catch (error) {
+      console.error('Share failed:', error);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -112,7 +210,19 @@ export function CollectionDetailScreen({ route, navigation }: any) {
             <TouchableOpacity onPress={() => navigation.goBack()}>
               <Text style={styles.backText}>← Back</Text>
             </TouchableOpacity>
+          </View>
 
+          <Text style={styles.title}>
+            {collection?.name ?? 'Collection'}
+          </Text>
+
+          <View style={styles.badgesRow}>
+            {collection?.type && (
+              <Badge
+                label={collection.type === 'recurring' ? 'Recurring' : 'One-time'}
+                color={colors.primary}
+              />
+            )}
             <Badge
               label={collection?.status ?? 'active'}
               color={
@@ -122,10 +232,6 @@ export function CollectionDetailScreen({ route, navigation }: any) {
               }
             />
           </View>
-
-          <Text style={styles.title}>
-            {collection?.name ?? 'Collection'}
-          </Text>
 
           <Text style={styles.date}>
             {formatDate(collection?.created_at ?? '')}
@@ -176,6 +282,52 @@ export function CollectionDetailScreen({ route, navigation }: any) {
           </Text>
         </View>
 
+        {/* ASSIGNED COLLECTORS */}
+        {collection?.status === 'active' && (
+          <Animated.View entering={FadeInUp.delay(100).duration(400)}
+            style={styles.collectorsSection}>
+            <View style={styles.collectorsHeaderRow}>
+              <Text style={styles.sectionLabel}>
+                Assigned Collectors ({assignedCollectors.length})
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowCollectorModal(true)}
+                style={styles.addSmallBtn}
+              >
+                <Text style={styles.addSmallBtnText}>+ Add</Text>
+              </TouchableOpacity>
+            </View>
+
+            {assignedCollectors.length === 0 ? (
+              <Text style={styles.emptyCollectors}>
+                No collectors assigned yet
+              </Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.collectorChipsRow}>
+                {assignedCollectors.map((ac: any) => (
+                  <View key={ac.id} style={styles.collectorChip}>
+                    <Text style={styles.collectorChipName}>
+                      {ac.collectors?.name ?? 'Collector'}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        try {
+                          await removeCollectorFromCollection(ac.id).unwrap();
+                        } catch {
+                          Toast.show({ type: 'error', text1: 'Failed to remove collector' });
+                        }
+                      }}
+                      style={styles.collectorChipRemove}
+                    >
+                      <Text style={styles.collectorChipRemoveText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </Animated.View>
+        )}
+
         {/* FILTER TABS */}
         <View style={styles.tabsRow}>
           {tabs.map((t) => (
@@ -202,6 +354,7 @@ export function CollectionDetailScreen({ route, navigation }: any) {
         {/* MEMBERS */}
         {filteredMembers.map((member: any, i: number) => {
           const paid = paymentMap[member.id] || 0;
+          const lastInfo = lastPaymentInfo[member.id];
 
           return (
             <Animated.View
@@ -212,38 +365,198 @@ export function CollectionDetailScreen({ route, navigation }: any) {
                 name={member.villagers?.name ?? 'Villager'}
                 amountDue={Number(member.amount_due)}
                 totalPaid={paid}
-                onPress={() =>
-                  navigation.navigate('VillagerPaymentDetail', {
-                    memberId: member.id,
-                  })
-                }
+                lastPaymentDate={lastInfo?.date}
+                collectorName={lastInfo?.collectorName ?? undefined}
               />
             </Animated.View>
           );
         })}
+
+        {/* COLLECTOR PICKER MODAL */}
+        <Modal visible={showCollectorModal} transparent>
+          <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.modalOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowCollectorModal(false)} />
+            <Animated.View entering={ZoomIn} exiting={ZoomOut} style={styles.modalBox}>
+              <Text style={styles.modalTitle}>Add Collector</Text>
+              {allCollectors
+                .filter((c) => !assignedCollectors.find((ac: any) => ac.collector_id === c.id))
+                .map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={{ paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' }}
+                    onPress={async () => {
+                      try {
+                        await addCollectorToCollection({ collection_id: collectionId, collector_id: c.id }).unwrap();
+                        setShowCollectorModal(false);
+                      } catch {
+                        Toast.show({ type: 'error', text1: 'Failed to add collector' });
+                      }
+                    }}>
+                    <Text style={{ fontFamily: fonts.poppins.medium, fontSize: 15, color: colors.textPrimary }}>{c.name}</Text>
+                    <Text style={{ fontFamily: fonts.inter.regular, fontSize: 12, color: colors.textMuted }}>{c.phone}</Text>
+                  </TouchableOpacity>
+                ))}
+              {allCollectors.filter((c) => !assignedCollectors.find((ac: any) => ac.collector_id === c.id)).length === 0 && (
+                <Text style={{ color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.lg }}>
+                  All collectors already assigned
+                </Text>
+              )}
+            </Animated.View>
+          </Animated.View>
+        </Modal>
+
+        {/* VILLAGER PICKER MODAL */}
+        <Modal visible={showVillagerModal} transparent>
+          <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.modalOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowVillagerModal(false)} />
+            <Animated.View entering={ZoomIn} exiting={ZoomOut} style={[styles.modalBox, styles.villagerModalBox]}>
+              <Text style={styles.modalTitle}>Add Villagers</Text>
+
+              {unassignedVillagers.length === 0 ? (
+                <Text style={{ color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.lg }}>
+                  All villagers are already in this collection
+                </Text>
+              ) : (
+                <ScrollView style={styles.villagerModalList}>
+                  {unassignedVillagers.map((v) => (
+                    <View key={v.id} style={styles.villagerModalRow}>
+                      <View style={styles.villagerModalInfo}>
+                        <Text style={styles.villagerModalName}>{v.name}</Text>
+                        <Text style={styles.villagerModalPhone}>{v.phone}</Text>
+                      </View>
+                      <TextInput
+                        style={styles.villagerModalInput}
+                        placeholder="Amount"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="numeric"
+                        value={newVillagerAmount[v.id] || ''}
+                        onChangeText={(val) =>
+                          /^\d*$/.test(val) &&
+                          setNewVillagerAmount((prev) => ({ ...prev, [v.id]: val }))
+                        }
+                      />
+                      <TouchableOpacity
+                        style={[
+                          styles.villagerModalAddBtn,
+                          !newVillagerAmount[v.id] && { opacity: 0.4 },
+                        ]}
+                        disabled={!newVillagerAmount[v.id]}
+                        onPress={() => handleAddVillager(v.id)}
+                      >
+                        <Text style={styles.villagerModalAddText}>Add</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </Animated.View>
+          </Animated.View>
+        </Modal>
       </ScrollView>
 
-      {/* CLOSE BUTTON */}
-      {collection?.status === 'active' && (
-        <View style={styles.footer}>
-          <Button
-            title="Close Collection"
-            onPress={async () => {
-              try {
-                await closeCollection(collectionId).unwrap();
-              } catch (err: any) {
-                Toast.show({
-                  type: 'error',
-                  text1: 'Failed to close collection',
-                });
-              }
-            }}
-            loading={closing}
-            variant="danger"
-            fullWidth
-          />
-        </View>
+      {/* STATS FOOTER */}
+      {members.length > 0 && (
+        <Animated.View entering={FadeInUp.duration(400)}>
+          <View style={styles.statsFooter}>
+            {collection?.status === 'active' && (
+              <>
+                <TouchableOpacity
+                  style={styles.footerActionBtn}
+                  onPress={() => setShowCloseModal(true)}
+                  activeOpacity={0.6}
+                >
+                  <MaterialCommunityIcons name="close-circle" size={18} color={colors.danger} />
+                  <Text style={[styles.footerActionText, { color: colors.danger }]}>Close</Text>
+                </TouchableOpacity>
+                <View style={styles.footerDivider} />
+              </>
+            )}
+            <TouchableOpacity
+              style={styles.footerActionBtn}
+              onPress={() => setShowVillagerModal(true)}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.footerActionIcon}>＋</Text>
+              <Text style={styles.footerActionText}>Add</Text>
+            </TouchableOpacity>
+            <View style={styles.footerDivider} />
+            <TouchableOpacity onPress={handleShare} style={styles.footerActionBtn} activeOpacity={0.6}>
+              <MaterialCommunityIcons name="share-variant" size={18} color={colors.primary} />
+              <Text style={styles.footerActionText}>Share</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
       )}
+
+      {/* ===== CLOSE CONFIRMATION MODAL ===== */}
+      <Modal visible={showCloseModal} transparent>
+        <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowCloseModal(false)} />
+          <Animated.View entering={ZoomIn} exiting={ZoomOut} style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Close Collection</Text>
+            <Text style={styles.modalText}>
+              This will mark "{collection?.name}" as closed. No more payments can be recorded.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setShowCloseModal(false)}>
+                <Text style={styles.cancelTextModal}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, { backgroundColor: colors.danger + '20' }]}
+                onPress={async () => {
+                  try {
+                    await closeCollection(collectionId).unwrap();
+                    Toast.show({ type: 'success', text1: 'Collection closed' });
+                    setShowCloseModal(false);
+                  } catch {
+                    Toast.show({ type: 'error', text1: 'Failed to close collection' });
+                  }
+                }}
+              >
+                <Text style={{ color: colors.danger, fontFamily: fonts.poppins.medium }}>Close</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
+
+      {/* ===== EDIT NAME MODAL ===== */}
+      <Modal visible={editing} transparent>
+        <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditing(false)} />
+          <Animated.View entering={ZoomIn} exiting={ZoomOut} style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Edit Collection Name</Text>
+            <TextInput
+              style={styles.editInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Collection name"
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <Pressable style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setEditing(false)}>
+                <Text style={styles.cancelTextModal}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, { backgroundColor: colors.primary + '20' }]}
+                onPress={async () => {
+                  if (!editName.trim()) return;
+                  try {
+                    await updateCollection({ id: collectionId, name: editName.trim() }).unwrap();
+                    Toast.show({ type: 'success', text1: 'Collection renamed' });
+                    setEditing(false);
+                  } catch (err: any) {
+                    Toast.show({ type: 'error', text1: err?.message ?? 'Failed to rename' });
+                  }
+                }}
+              >
+                <Text style={{ color: colors.primary, fontFamily: fonts.poppins.medium }}>Save</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
 
       {/* ===== PREMIUM DELETE MODAL ===== */}
       <Modal visible={showDeleteModal} transparent>
@@ -330,60 +643,217 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
 
-  backText: { color: colors.primary },
+  backText: { color: colors.primary, fontFamily: fonts.poppins.medium, fontSize: 14 },
 
   title: {
+    fontFamily: fonts.poppins.bold,
     fontSize: 26,
     color: colors.textPrimary,
     paddingHorizontal: spacing.xl,
   },
 
   date: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
     color: colors.textMuted,
     paddingHorizontal: spacing.xl,
+    marginTop: spacing.xs,
+  },
+
+  badgesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
   },
 
   actionRow: {
     flexDirection: 'row',
     gap: 20,
     paddingHorizontal: spacing.xl,
-    marginTop: 10,
+    marginTop: spacing.md,
   },
 
-  actionText: { color: colors.primary },
+  actionText: { color: colors.primary, fontFamily: fonts.poppins.medium, fontSize: 14 },
 
-  ringContainer: { alignItems: 'center', marginVertical: 30 },
+  ringContainer: { alignItems: 'center', marginVertical: spacing.xxl },
 
   totalsRow: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
 
-  totalValue: { color: colors.textPrimary },
+  totalValue: { color: colors.textPrimary, fontFamily: fonts.jetbrainsMono.medium, fontSize: 15 },
 
+  // ─── Assigned Collectors ───────────────────
+  collectorsSection: {
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.xl,
+  },
+
+  collectorsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+
+  sectionLabel: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 14,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  addSmallBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+  },
+
+  addSmallBtnText: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 12,
+    color: colors.primary,
+  },
+
+  emptyCollectors: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
+
+  collectorChipsRow: {
+    flexDirection: 'row',
+  },
+
+  collectorChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary + '15',
+    borderRadius: borderRadius.full,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginRight: spacing.sm,
+  },
+
+  collectorChipName: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 13,
+    color: colors.primary,
+    marginRight: spacing.xs,
+  },
+
+  collectorChipRemove: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  collectorChipRemoveText: {
+    color: colors.textMuted,
+    fontSize: 10,
+  },
+
+  // ─── Tabs ─────────────────────────────────
   tabsRow: {
     flexDirection: 'row',
     paddingHorizontal: spacing.xl,
     gap: 10,
+    marginBottom: spacing.md,
   },
 
   tab: {
-    padding: 8,
-    backgroundColor: '#222',
-    borderRadius: 20,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: borderRadius.full,
   },
 
   tabActive: {
     backgroundColor: colors.primary + '20',
   },
 
-  tabText: { color: '#aaa' },
+  tabText: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+
   tabTextActive: { color: colors.primary },
 
-  footer: { padding: 20 },
+  // ─── Stats Footer ──────────────────────
+  statsFooter: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.background,
+  },
 
-  /* ===== MODAL ===== */
+  footerStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
 
+  footerLabel: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 10,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: spacing.xs,
+  },
+
+  footerValue: {
+    fontFamily: fonts.jetbrainsMono.medium,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+
+  footerMuted: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+
+  footerDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginVertical: spacing.xs,
+  },
+
+  footerActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+
+  footerActionIcon: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.primary,
+  },
+
+  footerActionText: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 13,
+    color: colors.primary,
+  },
+
+  // ─── Modal ────────────────────────────────
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.65)',
@@ -397,22 +867,30 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     elevation: 10,
+    maxHeight: '70%',
+  },
+
+  villagerModalBox: {
+    maxHeight: '80%',
   },
 
   modalTitle: {
+    fontFamily: fonts.poppins.bold,
     fontSize: 18,
     color: colors.textPrimary,
-    fontWeight: 'bold',
+    marginBottom: spacing.lg,
   },
 
   modalText: {
     color: colors.textMuted,
     marginTop: 8,
+    fontFamily: fonts.inter.regular,
   },
 
   modalHighlight: {
     color: colors.primary,
     marginVertical: 10,
+    fontFamily: fonts.poppins.medium,
   },
 
   modalActions: {
@@ -436,377 +914,82 @@ const styles = StyleSheet.create({
 
   cancelTextModal: {
     color: '#aaa',
+    fontFamily: fonts.poppins.medium,
   },
 
   deleteText: {
     color: 'red',
+    fontFamily: fonts.poppins.medium,
+  },
+
+  editInput: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 16,
+    color: colors.textPrimary,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginVertical: spacing.lg,
+  },
+
+  // ─── Villager Modal ───────────────────────
+  villagerModalList: {
+    maxHeight: 400,
+  },
+
+  villagerModalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    gap: spacing.sm,
+  },
+
+  villagerModalInfo: {
+    flex: 1,
+  },
+
+  villagerModalName: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+
+  villagerModalPhone: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+
+  villagerModalInput: {
+    fontFamily: fonts.jetbrainsMono.regular,
+    fontSize: 14,
+    color: colors.textPrimary,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    width: 80,
+    textAlign: 'right',
+  },
+
+  villagerModalAddBtn: {
+    backgroundColor: colors.primary + '20',
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+
+  villagerModalAddText: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 13,
+    color: colors.primary,
   },
 });
-
-// import React, { useMemo, useState } from 'react';
-// import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
-// import Animated, { FadeInUp } from 'react-native-reanimated';
-// import { colors } from '../../constants/colors';
-// import { fonts } from '../../constants/fonts';
-// import { spacing, borderRadius } from '../../constants/spacing';
-// import { Card, Badge, Button } from '../../components/common';
-// import { ProgressRing, PaymentRow } from '../../components/collections';
-// import {
-//   useGetCollectionQuery,
-//   useGetCollectionMembersWithVillagersQuery,
-//   useGetPaymentsByCollectionQuery,
-//   useCloseCollectionMutation,
-//   useUpdateCollectionMutation,
-//   useDeleteCollectionMutation,
-// } from '../../store/api/supabaseApi';
-// import Toast from 'react-native-toast-message';
-// import { formatCurrency } from '../../utils/currency';
-// import { formatDate } from '../../utils/dates';
-
-// type FilterType = 'all' | 'paid' | 'partial' | 'pending' | 'overdue';
-
-// export function CollectionDetailScreen({ route, navigation }: any) {
-//   const { collectionId } = route.params;
-//   const { data: collection } = useGetCollectionQuery(collectionId);
-//   const { data: members = [] } = useGetCollectionMembersWithVillagersQuery(collectionId);
-//   const { data: payments = [] } = useGetPaymentsByCollectionQuery(collectionId);
-//   const [closeCollection, { isLoading: closing }] = useCloseCollectionMutation();
-//   const [updateCollection, { isLoading: updating }] = useUpdateCollectionMutation();
-//   const [deleteCollection, { isLoading: deleting }] = useDeleteCollectionMutation();
-//   const [editing, setEditing] = useState(false);
-//   const [editName, setEditName] = useState('');
-//   const [filter, setFilter] = useState<FilterType>('all');
-//   const [confirmDelete, setConfirmDelete] = useState(false);
-
-//   const totalDue = useMemo(
-//     () => members.reduce((sum, m: any) => sum + Number(m.amount_due), 0),
-//     [members]
-//   );
-
-//   const totalPaid = useMemo(
-//     () => payments.reduce((sum, p) => sum + Number(p.amount_paid), 0),
-//     [payments]
-//   );
-
-//   const paymentMap = useMemo(() => {
-//     const map: Record<string, number> = {};
-//     payments.forEach((p) => {
-//       map[p.collection_member_id] = (map[p.collection_member_id] || 0) + Number(p.amount_paid);
-//     });
-//     return map;
-//   }, [payments]);
-
-//   const filteredMembers = useMemo(() => {
-//     return members.filter((m: any) => {
-//       const paid = paymentMap[m.id] || 0;
-//       const due = Number(m.amount_due);
-//       switch (filter) {
-//         case 'paid': return paid >= due;
-//         case 'partial': return paid > 0 && paid < due;
-//         case 'pending': return paid === 0;
-//         case 'overdue': return paid === 0;
-//         default: return true;
-//       }
-//     });
-//   }, [members, paymentMap, filter]);
-
-//   const tabs: { key: FilterType; label: string }[] = [
-//     { key: 'all', label: 'All' },
-//     { key: 'paid', label: 'Paid' },
-//     { key: 'partial', label: 'Partial' },
-//     { key: 'pending', label: 'Pending' },
-//     { key: 'overdue', label: 'Overdue' },
-//   ];
-
-//   return (
-//     <View style={styles.container}>
-//       <ScrollView contentContainerStyle={styles.scrollContent}>
-//         <Animated.View entering={FadeInUp.duration(400)}>
-//           <View style={styles.header}>
-//             <TouchableOpacity onPress={() => navigation.goBack()}>
-//               <Text style={styles.backText}>← Back</Text>
-//             </TouchableOpacity>
-//             <Badge
-//               label={collection?.status ?? 'active'}
-//               color={(collection?.status ?? 'active') === 'active' ? colors.secondary : colors.textMuted}
-//             />
-//           </View>
-
-//           <Text style={styles.title}>{collection?.name ?? 'Collection'}</Text>
-//           <Badge
-//             label={(collection?.type ?? 'recurring') === 'recurring' ? 'Monthly' : 'One-time'}
-//             color={colors.primary}
-//           />
-//           <Text style={styles.date}>{formatDate(collection?.created_at ?? new Date().toISOString())}</Text>
-
-//           {collection?.status === 'active' && (
-//             <View style={styles.actionRow}>
-//               {editing ? (
-//                 <View style={styles.editRow}>
-//                   <TextInput
-//                     style={styles.editInput}
-//                     value={editName}
-//                     onChangeText={setEditName}
-//                     placeholder="Collection name"
-//                     placeholderTextColor={colors.textMuted}
-//                   />
-//                   <TouchableOpacity
-//                     onPress={async () => {
-//                       if (!editName.trim()) return;
-//                       try {
-//                         await updateCollection({ id: collectionId, name: editName.trim() }).unwrap();
-//                         Toast.show({ type: 'success', text1: 'Collection renamed' });
-//                         setEditing(false);
-//                       } catch (err: any) {
-//                         Toast.show({ type: 'error', text1: err?.message ?? 'Failed to rename' });
-//                       }
-//                     }}
-//                   >
-//                     <Text style={styles.actionText}>Save</Text>
-//                   </TouchableOpacity>
-//                   <TouchableOpacity onPress={() => setEditing(false)}>
-//                     <Text style={[styles.actionText, { color: colors.textMuted }]}>Cancel</Text>
-//                   </TouchableOpacity>
-//                 </View>
-//               ) : (
-//                 <>
-//                   <TouchableOpacity
-//                     onPress={() => {
-//                       setEditName(collection?.name ?? '');
-//                       setEditing(true);
-//                     }}
-//                   >
-//                     <Text style={styles.actionText}>Edit</Text>
-//                   </TouchableOpacity>
-//                   {confirmDelete ? (
-//                     <View style={styles.confirmRow}>
-//                       <Text style={styles.confirmText}>Delete "{collection?.name}"?</Text>
-//                       <TouchableOpacity
-//                         onPress={async () => {
-//                           try {
-//                             await deleteCollection(collectionId).unwrap();
-//                             Toast.show({ type: 'success', text1: 'Collection deleted' });
-//                             navigation.goBack();
-//                           } catch (err: any) {
-//                             Toast.show({ type: 'error', text1: err?.message ?? 'Failed to delete' });
-//                           }
-//                         }}
-//                       >
-//                         <Text style={[styles.actionText, { color: colors.danger }]}>Yes</Text>
-//                       </TouchableOpacity>
-//                       <TouchableOpacity onPress={() => setConfirmDelete(false)}>
-//                         <Text style={[styles.actionText, { color: colors.textMuted }]}>No</Text>
-//                       </TouchableOpacity>
-//                     </View>
-//                   ) : (
-//                     <TouchableOpacity onPress={() => setConfirmDelete(true)}>
-//                       <Text style={[styles.actionText, { color: colors.danger }]}>Delete</Text>
-//                     </TouchableOpacity>
-//                   )}
-//                 </>
-//               )}
-//             </View>
-//           )}
-//         </Animated.View>
-
-//         <Animated.View entering={FadeInUp.delay(100).duration(400)} style={styles.ringContainer}>
-//           <ProgressRing collected={totalPaid} total={totalDue} size={160} strokeWidth={10} />
-//         </Animated.View>
-
-//         <Animated.View entering={FadeInUp.delay(150).duration(400)}>
-//           <View style={styles.totalsRow}>
-//             <View style={styles.totalItem}>
-//               <Text style={styles.totalLabel}>Expected</Text>
-//               <Text style={styles.totalValue}>{formatCurrency(totalDue)}</Text>
-//             </View>
-//             <View style={styles.totalItem}>
-//               <Text style={styles.totalLabel}>Collected</Text>
-//               <Text style={[styles.totalValue, { color: colors.secondary }]}>{formatCurrency(totalPaid)}</Text>
-//             </View>
-//             <View style={styles.totalItem}>
-//               <Text style={styles.totalLabel}>Pending</Text>
-//               <Text style={[styles.totalValue, { color: colors.warning }]}>{formatCurrency(totalDue - totalPaid)}</Text>
-//             </View>
-//           </View>
-//         </Animated.View>
-
-//         <View style={styles.tabsRow}>
-//           {tabs.map((t) => (
-//             <TouchableOpacity
-//               key={t.key}
-//               style={[styles.tab, filter === t.key && styles.tabActive]}
-//               onPress={() => setFilter(t.key)}
-//             >
-//               <Text style={[styles.tabText, filter === t.key && styles.tabTextActive]}>{t.label}</Text>
-//             </TouchableOpacity>
-//           ))}
-//         </View>
-
-//         {filteredMembers.map((member: any, i: number) => {
-//           const paid = paymentMap[member.id] || 0;
-//           const villagerName = member.villagers?.name ?? 'Villager';
-//           return (
-//             <Animated.View key={member.id} entering={FadeInUp.delay(i * 50).duration(300)}>
-//               <PaymentRow
-//                 name={villagerName}
-//                 amountDue={Number(member.amount_due)}
-//                 totalPaid={paid}
-//                 onPress={() => navigation.navigate('VillagerPaymentDetail', { memberId: member.id })}
-//               />
-//             </Animated.View>
-//           );
-//         })}
-//       </ScrollView>
-
-//       {collection?.status === 'active' && (
-//         <View style={styles.footer}>
-//           <Button
-//             title="Close Collection"
-//             onPress={async () => {
-//               try {
-//                 await closeCollection(collectionId).unwrap();
-//               } catch (err: any) {
-//                 Toast.show({ type: 'error', text1: err?.message ?? err?.error ?? 'Failed to close collection' });
-//               }
-//             }}
-//             loading={closing}
-//             variant="danger"
-//             fullWidth
-//           />
-//         </View>
-//       )}
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: colors.background,
-//   },
-//   scrollContent: {
-//     paddingBottom: 100,
-//   },
-//   header: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     alignItems: 'center',
-//     paddingHorizontal: spacing.xl,
-//     paddingTop: spacing.huge,
-//     paddingBottom: spacing.sm,
-//   },
-//   backText: {
-//     fontFamily: fonts.poppins.medium,
-//     fontSize: 14,
-//     color: colors.primary,
-//   },
-//   title: {
-//     fontFamily: fonts.poppins.bold,
-//     fontSize: 26,
-//     color: colors.textPrimary,
-//     paddingHorizontal: spacing.xl,
-//     marginBottom: spacing.xs,
-//   },
-//   date: {
-//     fontFamily: fonts.inter.regular,
-//     fontSize: 12,
-//     color: colors.textMuted,
-//     paddingHorizontal: spacing.xl,
-//     marginTop: spacing.sm,
-//   },
-//   ringContainer: {
-//     alignItems: 'center',
-//     paddingVertical: spacing.xxl,
-//   },
-//   totalsRow: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-around',
-//     paddingHorizontal: spacing.xl,
-//     marginBottom: spacing.xxl,
-//   },
-//   totalItem: {
-//     alignItems: 'center',
-//   },
-//   totalLabel: {
-//     fontFamily: fonts.inter.regular,
-//     fontSize: 11,
-//     color: colors.textMuted,
-//     textTransform: 'uppercase',
-//     letterSpacing: 0.5,
-//     marginBottom: spacing.xs,
-//   },
-//   totalValue: {
-//     fontFamily: fonts.jetbrainsMono.medium,
-//     fontSize: 16,
-//     color: colors.textPrimary,
-//   },
-//   tabsRow: {
-//     flexDirection: 'row',
-//     paddingHorizontal: spacing.xl,
-//     marginBottom: spacing.md,
-//     gap: spacing.sm,
-//   },
-//   tab: {
-//     paddingVertical: spacing.sm,
-//     paddingHorizontal: spacing.md,
-//     borderRadius: borderRadius.full,
-//     backgroundColor: 'rgba(255,255,255,0.05)',
-//   },
-//   tabActive: {
-//     backgroundColor: colors.primary + '20',
-//   },
-//   tabText: {
-//     fontFamily: fonts.poppins.medium,
-//     fontSize: 12,
-//     color: colors.textMuted,
-//   },
-//   tabTextActive: {
-//     color: colors.primary,
-//   },
-//   actionRow: {
-//     flexDirection: 'row',
-//     paddingHorizontal: spacing.xl,
-//     marginTop: spacing.md,
-//     gap: spacing.lg,
-//   },
-//   editRow: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     flex: 1,
-//     gap: spacing.sm,
-//   },
-//   editInput: {
-//     flex: 1,
-//     fontFamily: fonts.poppins.medium,
-//     fontSize: 14,
-//     color: colors.textPrimary,
-//     backgroundColor: 'rgba(255,255,255,0.05)',
-//     borderWidth: 1,
-//     borderColor: colors.primary + '40',
-//     borderRadius: borderRadius.sm,
-//     paddingHorizontal: spacing.md,
-//     paddingVertical: spacing.sm,
-//   },
-//   confirmRow: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: spacing.sm,
-//   },
-//   confirmText: {
-//     fontFamily: fonts.poppins.medium,
-//     fontSize: 13,
-//     color: colors.textMuted,
-//     flex: 1,
-//   },
-//   actionText: {
-//     fontFamily: fonts.poppins.medium,
-//     fontSize: 14,
-//     color: colors.primary,
-//   },
-//   footer: {
-//     paddingHorizontal: spacing.xl,
-//     paddingVertical: spacing.lg,
-//     borderTopWidth: 1,
-//     borderTopColor: 'rgba(255,255,255,0.06)',
-//   },
-// });

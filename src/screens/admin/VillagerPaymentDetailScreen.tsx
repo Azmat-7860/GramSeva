@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
@@ -11,12 +11,28 @@ import {
   useGetCollectionMemberDetailQuery,
   useGetPaymentsForCollectionQuery,
 } from '../../store/api/supabaseApi';
+import { supabase } from '../../store/supabaseClient';
 
 export function VillagerPaymentDetailScreen({ route, navigation }: any) {
-  const { memberId } = route.params;
+  const { memberId, villagerId } = route.params;
+  const [resolvedMemberId, setResolvedMemberId] = useState<string | null>(memberId ?? null);
 
-  const { data: member } = useGetCollectionMemberDetailQuery(memberId);
-  const { data: payments = [] } = useGetPaymentsForCollectionQuery(memberId);
+  useEffect(() => {
+    if (villagerId && !memberId) {
+      (async () => {
+        const { data } = await supabase
+          .from('collection_members')
+          .select('id')
+          .eq('villager_id', villagerId)
+          .limit(1)
+          .single();
+        if (data) setResolvedMemberId(data.id);
+      })();
+    }
+  }, [villagerId, memberId]);
+
+  const { data: member } = useGetCollectionMemberDetailQuery(resolvedMemberId ?? '', { skip: !resolvedMemberId });
+  const { data: payments = [] } = useGetPaymentsForCollectionQuery(resolvedMemberId ?? '', { skip: !resolvedMemberId });
 
   const villagerData: { name: string; phone: string } | null =
     (member?.villagers as any) ?? null;
@@ -93,7 +109,7 @@ export function VillagerPaymentDetailScreen({ route, navigation }: any) {
       <View style={styles.footer}>
         <Button
           title="Record Payment"
-          onPress={() => navigation.navigate('RecordPayment', { memberId })}
+          onPress={() => resolvedMemberId && navigation.navigate('RecordPayment', { memberId: resolvedMemberId })}
           fullWidth
         />
       </View>

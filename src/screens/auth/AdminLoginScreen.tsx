@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableOpacity,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -41,6 +49,7 @@ export function AdminLoginScreen({ navigation }: any) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     control,
@@ -91,9 +100,9 @@ export function AdminLoginScreen({ navigation }: any) {
       }
     } catch {
       setError('Something went wrong. Try again.');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
@@ -127,32 +136,48 @@ export function AdminLoginScreen({ navigation }: any) {
           control={control}
           name="password"
           render={({ field: { onChange, value } }) => (
-            <Input
-              label="Password"
-              placeholder="Enter your password"
-              value={value}
-              onChangeText={onChange}
-              secureTextEntry
-              error={errors.password?.message}
-            />
+            <View style={styles.passwordContainer}>
+              <Input
+                label="Password"
+                placeholder="Enter your password"
+                value={value}
+                onChangeText={onChange}
+                secureTextEntry={!showPassword}
+                error={errors.password?.message}
+                containerStyle={styles.passwordInput}
+              />
+              <TouchableOpacity
+                style={styles.eyeButton}
+                onPress={() => setShowPassword((prev) => !prev)}
+                activeOpacity={0.6}
+              >
+                <MaterialCommunityIcons
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={20}
+                  color={showPassword ? colors.primary : colors.textMuted}
+                />
+              </TouchableOpacity>
+            </View>
           )}
         />
 
         {error && <Text style={styles.errorText}>{error}</Text>}
 
-        <Button
-          title={isSignUp ? 'Create Account' : 'Sign In'}
+        <Button style={{ marginTop: spacing.lg, width: '50%', alignSelf: 'center',marginBottom: spacing.md }}
+          title={isSignUp ? 'Create Account ' : 'Sign In '}
           onPress={handleSubmit(handleAuth)}
           loading={loading}
           fullWidth
         />
 
-        <Button
-          title={isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Create one"}
-          onPress={() => { setIsSignUp(!isSignUp); setError(null); }}
-          variant="ghost"
+        <TouchableOpacity
           style={{ marginTop: spacing.md }}
-        />
+          onPress={() => { setIsSignUp(!isSignUp); setError(null); }}
+        >
+          <Text style={styles.toggleText}>
+            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Create one"}
+          </Text>
+        </TouchableOpacity>
 
         <View style={styles.divider}>
           <View style={styles.dividerLine} />
@@ -200,6 +225,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     textAlign: 'center',
   },
+  toggleText: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 14,
+    color: colors.primary,
+    textAlign: 'center',
+  },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -220,6 +251,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary + '40',
     borderRadius: 8,
+  },
+
+  passwordContainer: {
+    position: 'relative',
+  },
+
+  passwordInput: {
+    marginBottom: 0,
+  },
+
+  eyeButton: {
+    position: 'absolute',
+    right: 14,
+    top: 45,
+    zIndex: 10,
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
 });
 // import React, { useState } from 'react';

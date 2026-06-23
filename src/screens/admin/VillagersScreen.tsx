@@ -51,7 +51,7 @@ export function VillagersScreen({ navigation }: any) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {filtered.map((v, i) => (
           <Animated.View key={v.id} entering={FadeInUp.delay(i * 30).duration(300)}>
-            <TouchableOpacity style={styles.villagerRow}>
+            <TouchableOpacity style={styles.villagerRow} onPress={() => navigation.navigate('VillagerPaymentDetail', { villagerId: v.id })}>
               <Avatar name={v.name} size={40} />
               <View style={styles.villagerInfo}>
                 <Text style={styles.villagerName}>{v.name}</Text>

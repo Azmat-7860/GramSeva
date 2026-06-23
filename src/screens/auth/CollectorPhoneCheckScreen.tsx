@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
@@ -62,22 +63,39 @@ export function CollectorPhoneCheckScreen({ navigation }: CollectorPhoneCheckScr
           <Text style={styles.message}>
             Enter the phone number registered with your collector account.
           </Text>
-          <Input
-            label="Phone Number"
-            placeholder="10-digit phone number"
-            value={manualPhone}
-            onChangeText={setManualPhone}
-            keyboardType="phone-pad"
-            maxLength={10}
-          />
-          <Button
-            title="Check"
-            onPress={handleManualCheck}
-            disabled={manualPhone.length < 10}
-            fullWidth
-          />
+          <View style={styles.phoneRow}>
+            <View style={styles.phoneInput}>
+              <Input
+                label="Phone Number"
+                placeholder="10-digit phone number"
+                value={manualPhone}
+                onChangeText={setManualPhone}
+                keyboardType="phone-pad"
+                maxLength={10}
+                containerStyle={{ marginBottom: 0 }}
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.checkBtn, manualPhone.length < 10 && styles.checkBtnDisabled]}
+              onPress={handleManualCheck}
+              disabled={manualPhone.length < 10}
+              activeOpacity={0.6}
+            >
+              <MaterialCommunityIcons
+                name="check-bold"
+                size={30}
+                color={manualPhone.length < 10 ? colors.textMuted : colors.white}
+              />
+            </TouchableOpacity>
+          </View>
+{/* //           <Button
+//             title="Check"
+//             onPress={handleManualCheck}
+//             disabled={manualPhone.length < 10}
+//             fullWidth
+//           /> */}
           {/* <Button title="Not a collector?" onPress={() => setFound(false)} variant="ghost" /> */}
-          <Button title="Not a collector?" onPress={() => navigation.goBack()} variant="ghost" />
+          <Button title=" <- Not a collector?" onPress={() => navigation.goBack()} variant="ghost" />
         </Animated.View>
       </View>
     );
@@ -163,5 +181,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.xxl,
     lineHeight: 22,
+  },
+
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+    width: '100%',
+  },
+
+  phoneInput: {
+    flex: 1,
+  },
+
+  checkBtn: {
+    width: 44,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 0,
+  },
+
+  checkBtnDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
 });
