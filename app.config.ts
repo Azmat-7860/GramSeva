@@ -21,6 +21,7 @@ export default {
     },
     package: 'com.gramseva.app',
     sms: true,
+    permissions: ['android.permission.SEND_SMS'],
   },
   web: {
     favicon: './assets/images/favicon.png',
@@ -32,7 +33,7 @@ export default {
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
     eas: {
-      projectId: "fa2e94ff-9d77-48ec-86ec-abc7737a16e6"
-    }
+      projectId: 'fa2e94ff-9d77-48ec-86ec-abc7737a16e6',
+    },
   },
 };
