@@ -51,10 +51,6 @@ export function VillagerHistoryScreen({ navigation }: any) {
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backText}>← Back</Text>
-          </TouchableOpacity>
-
           <Text style={styles.title}>Check Your Payments</Text>
           <Text style={styles.subtitle}>
             Enter your registered phone number to view your payment history.
@@ -112,10 +108,6 @@ export function VillagerHistoryScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <TouchableOpacity onPress={() => { setVerified(false); setOtpSent(false); }}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-
         <Text style={styles.title}>Your Payment History</Text>
 
         {history.length === 0 && (
@@ -179,13 +171,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.xl,
     paddingBottom: 100,
-  },
-  backText: {
-    fontFamily: fonts.poppins.medium,
-    fontSize: 14,
-    color: colors.primary,
-    paddingTop: spacing.huge,
-    marginBottom: spacing.lg,
   },
   title: {
     fontFamily: fonts.poppins.bold,

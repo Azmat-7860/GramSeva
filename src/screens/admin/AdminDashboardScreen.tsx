@@ -20,7 +20,7 @@ export function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) 
   const dispatch = useAppDispatch();
   const { email, villageId, villageName } = useAppSelector((state) => state.auth);
 
-  const { data: collections = [] } = useGetCollectionsQuery(villageId ?? '');
+  const { data: collections = [] } = useGetCollectionsQuery(villageId ?? '', { skip: !villageId });
   const { data: stats } = useGetDashboardStatsQuery(villageId ?? '', { skip: !villageId });
 
   const pendingCollectionCount = useMemo(

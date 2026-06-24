@@ -33,7 +33,7 @@ export function CollectorCollectionDetailScreen({ route, navigation }: any) {
   const { data: members = [] } =
     useGetCollectionMembersWithVillagersQuery(collectionId);
   const { data: payments = [] } =
-    useGetPaymentsByCollectionQuery(collectionId);
+    useGetPaymentsByCollectionQuery({ collectionId });
 
   const [filter, setFilter] = useState<FilterType>('all');
 
@@ -146,14 +146,7 @@ export function CollectorCollectionDetailScreen({ route, navigation }: any) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* HEADER */}
         <Animated.View entering={FadeInUp.duration(400)}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => navigation.goBack()}>
-              <Text style={styles.backText}>← Back</Text>
-            </TouchableOpacity>
-
-            <View style={styles.headerActions}>
-            </View>
-          </View>
+          <View style={styles.header} />
 
           <Text style={styles.title}>
             {collectionName ?? collection?.name ?? 'Collection'}
@@ -345,18 +338,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.huge,
     paddingBottom: spacing.sm,
-  },
-
-  backText: {
-    fontFamily: fonts.poppins.medium,
-    fontSize: 14,
-    color: colors.primary,
-  },
-
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
   },
 
   title: {

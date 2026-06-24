@@ -36,8 +36,11 @@ import {
   useAddCollectorToCollectionMutation,
   useRemoveCollectorFromCollectionMutation,
   useAddCollectionMemberMutation,
+  useStartNewCycleMutation,
+  useUpdateCollectionMemberMutation,
 } from '../../store/api/supabaseApi';
 import { useAppSelector } from '../../store/store';
+import { supabase } from '../../store/supabaseClient';
 import Toast from 'react-native-toast-message';
 import { formatCurrency } from '../../utils/currency';
 import { formatDate } from '../../utils/dates';
@@ -52,7 +55,10 @@ export function CollectionDetailScreen({ route, navigation }: any) {
   const { data: members = [] } =
     useGetCollectionMembersWithVillagersQuery(collectionId);
   const { data: payments = [] } =
-    useGetPaymentsByCollectionQuery(collectionId);
+    useGetPaymentsByCollectionQuery({
+      collectionId,
+      monthLabel: collection?.current_month_label ?? undefined,
+    });
 
   const [closeCollection, { isLoading: closing }] =
     useCloseCollectionMutation();
@@ -65,6 +71,8 @@ export function CollectionDetailScreen({ route, navigation }: any) {
   const [addCollectorToCollection] = useAddCollectorToCollectionMutation();
   const [removeCollectorFromCollection] = useRemoveCollectorFromCollectionMutation();
   const [addCollectionMember, { isLoading: addingMember }] = useAddCollectionMemberMutation();
+  const [startNewCycle, { isLoading: cycleLoading }] = useStartNewCycleMutation();
+  const [updateMember] = useUpdateCollectionMemberMutation();
 
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -73,6 +81,11 @@ export function CollectionDetailScreen({ route, navigation }: any) {
   const [showCollectorModal, setShowCollectorModal] = useState(false);
   const [showVillagerModal, setShowVillagerModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showCycleModal, setShowCycleModal] = useState(false);
+  const [startingCycle, setStartingCycle] = useState(false);
+  const [editMemberId, setEditMemberId] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editWarning, setEditWarning] = useState('');
   const [newVillagerAmount, setNewVillagerAmount] = useState<Record<string, string>>({});
 
   // ===== CALCULATIONS =====
@@ -206,12 +219,6 @@ export function CollectionDetailScreen({ route, navigation }: any) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* HEADER */}
         <Animated.View entering={FadeInUp.duration(400)}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => navigation.goBack()}>
-              <Text style={styles.backText}>← Back</Text>
-            </TouchableOpacity>
-          </View>
-
           <Text style={styles.title}>
             {collection?.name ?? 'Collection'}
           </Text>
@@ -258,6 +265,21 @@ export function CollectionDetailScreen({ route, navigation }: any) {
                   Delete
                 </Text>
               </TouchableOpacity>
+
+              {collection?.type === 'recurring' && (
+                <>
+                  <Text style={styles.actionDivider}>|</Text>
+                  <TouchableOpacity onPress={() => setShowCycleModal(true)}>
+                    <Text style={[styles.actionText, { color: colors.secondary }]}>
+                      Start New Cycle
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={styles.actionDivider}>|</Text>
+                  <TouchableOpacity onPress={() => navigation.navigate('CollectionHistory', { collectionId })}>
+                    <Text style={[styles.actionText, { color: colors.primary }]}>History</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           )}
         </Animated.View>
@@ -361,16 +383,116 @@ export function CollectionDetailScreen({ route, navigation }: any) {
               key={member.id}
               entering={FadeInUp.delay(i * 50)}
             >
-              <PaymentRow
-                name={member.villagers?.name ?? 'Villager'}
-                amountDue={Number(member.amount_due)}
-                totalPaid={paid}
-                lastPaymentDate={lastInfo?.date}
-                collectorName={lastInfo?.collectorName ?? undefined}
-              />
+              <View style={styles.memberRow}>
+                <View style={styles.memberInfo}>
+                  <PaymentRow
+                    name={member.villagers?.name ?? 'Villager'}
+                    amountDue={Number(member.amount_due)}
+                    totalPaid={paid}
+                    lastPaymentDate={lastInfo?.date}
+                    collectorName={lastInfo?.collectorName ?? undefined}
+                  />
+                </View>
+                {collection?.status === 'active' && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditMemberId(member.id);
+                      setEditAmount(String(member.amount_due));
+                    }}
+                    style={styles.editBtn}
+                  >
+                    <MaterialCommunityIcons name="pencil" size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                )}
+              </View>
             </Animated.View>
           );
         })}
+
+        {/* EDIT AMOUNT MODAL */}
+        <Modal visible={!!editMemberId} transparent>
+          <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.modalOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditMemberId(null)} />
+            <Animated.View entering={ZoomIn} exiting={ZoomOut} style={styles.modalBox}>
+              {(() => {
+                const editMember = editMemberId ? members.find((m: any) => m.id === editMemberId) : null;
+                if (!editMember) return null;
+                const editPaid = paymentMap[editMemberId!] || 0;
+                const editOldDue = Number(editMember.amount_due);
+                const newVal = parseFloat(editAmount || '0');
+                return (
+                  <>
+                    <Text style={styles.modalTitle}>Edit Amount Due</Text>
+                    <Text style={styles.modalText}>
+                      Villager: {editMember.villagers?.name ?? 'Unknown'}
+                    </Text>
+                    <View style={styles.editInfoRow}>
+                      <View style={styles.editInfoItem}>
+                        <Text style={styles.editInfoLabel}>Current Due</Text>
+                        <Text style={styles.editInfoValue}>{formatCurrency(editOldDue)}</Text>
+                      </View>
+                      <View style={styles.editInfoItem}>
+                        <Text style={styles.editInfoLabel}>Paid So Far</Text>
+                        <Text style={styles.editInfoValue}>{formatCurrency(editPaid)}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.inputLabel}>New Amount</Text>
+                    <TextInput
+                      style={styles.editInput}
+                      value={editAmount}
+                      onChangeText={(val) => {
+                        if (/^\d*$/.test(val)) {
+                          setEditAmount(val);
+                          const parsed = parseFloat(val || '0');
+                          if (parsed <= 0) {
+                            setEditWarning('Amount must be greater than 0');
+                          } else if (parsed < editPaid) {
+                            setEditWarning(`Member has already paid ${formatCurrency(editPaid)}. Setting amount lower will show them as overpaid.`);
+                          } else {
+                            setEditWarning('');
+                          }
+                        }
+                      }}
+                      keyboardType="numeric"
+                      placeholder="Enter amount"
+                      placeholderTextColor={colors.textMuted}
+                      autoFocus
+                    />
+                    {editWarning ? (
+                      <Text style={styles.editWarning}>{editWarning}</Text>
+                    ) : null}
+                    <View style={styles.modalActions}>
+                      <Pressable style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setEditMemberId(null)}>
+                        <Text style={styles.cancelTextModal}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.modalBtn, { backgroundColor: colors.primary + '20' }]}
+                        onPress={async () => {
+                          if (!editAmount || !editMemberId) return;
+                          const parsed = parseFloat(editAmount);
+                          if (!parsed || parsed <= 0) {
+                            Toast.show({ type: 'error', text1: 'Amount must be greater than 0' });
+                            return;
+                          }
+                          try {
+                            await updateMember({ id: editMemberId, amount_due: parsed }).unwrap();
+                            Toast.show({ type: 'success', text1: 'Amount updated' });
+                            setEditMemberId(null);
+                            setEditWarning('');
+                          } catch (err: any) {
+                            Toast.show({ type: 'error', text1: err?.message ?? 'Failed to update' });
+                          }
+                        }}
+                      >
+                        <Text style={{ color: colors.primary, fontFamily: fonts.poppins.medium }}>Save</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                );
+              })()}
+            </Animated.View>
+          </Animated.View>
+        </Modal>
 
         {/* COLLECTOR PICKER MODAL */}
         <Modal visible={showCollectorModal} transparent>
@@ -520,6 +642,47 @@ export function CollectionDetailScreen({ route, navigation }: any) {
         </Animated.View>
       </Modal>
 
+      {/* ===== START NEW CYCLE MODAL ===== */}
+      <Modal visible={showCycleModal} transparent>
+        <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowCycleModal(false)} />
+          <Animated.View entering={ZoomIn} exiting={ZoomOut} style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Start New Monthly Cycle</Text>
+            <Text style={styles.modalText}>
+              This will start a new monthly cycle for "{collection?.name}".{'\n\n'}
+              • Unpaid amounts will carry forward to next month{'\n'}
+              • Members with credit balance will have it deducted{'\n'}
+              • All members will owe their base amount + carry-forward
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setShowCycleModal(false)}>
+                <Text style={styles.cancelTextModal}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, { backgroundColor: colors.secondary + '20' }]}
+                disabled={startingCycle}
+                onPress={async () => {
+                  setStartingCycle(true);
+                  try {
+                    await startNewCycle(collectionId).unwrap();
+                    Toast.show({ type: 'success', text1: 'New cycle started' });
+                    setShowCycleModal(false);
+                  } catch (err: any) {
+                    Toast.show({ type: 'error', text1: err?.message ?? 'Failed to start cycle' });
+                  } finally {
+                    setStartingCycle(false);
+                  }
+                }}
+              >
+                <Text style={{ color: colors.secondary, fontFamily: fonts.poppins.medium }}>
+                  {startingCycle ? 'Starting...' : 'Start Cycle'}
+                </Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
+
       {/* ===== EDIT NAME MODAL ===== */}
       <Modal visible={editing} transparent>
         <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.modalOverlay}>
@@ -637,14 +800,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scrollContent: { paddingBottom: 100 },
 
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: spacing.xl,
-  },
-
-  backText: { color: colors.primary, fontFamily: fonts.poppins.medium, fontSize: 14 },
-
   title: {
     fontFamily: fonts.poppins.bold,
     fontSize: 26,
@@ -677,6 +832,7 @@ const styles = StyleSheet.create({
   },
 
   actionText: { color: colors.primary, fontFamily: fonts.poppins.medium, fontSize: 14 },
+  actionDivider: { color: colors.textMuted, fontFamily: fonts.poppins.medium, fontSize: 14 },
 
   ringContainer: { alignItems: 'center', marginVertical: spacing.xxl },
 
@@ -763,6 +919,17 @@ const styles = StyleSheet.create({
   collectorChipRemoveText: {
     color: colors.textMuted,
     fontSize: 10,
+  },
+
+  // ─── Member Row ─────────────────────────
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  memberInfo: { flex: 1 },
+  editBtn: {
+    padding: spacing.sm,
+    marginRight: spacing.sm,
   },
 
   // ─── Tabs ─────────────────────────────────
@@ -932,7 +1099,44 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    marginVertical: spacing.lg,
+    marginVertical: spacing.md,
+  },
+  editWarning: {
+    color: '#f59e0b',
+    fontFamily: fonts.poppins.medium,
+    fontSize: 12,
+    marginBottom: spacing.sm,
+  },
+  editInfoRow: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  editInfoItem: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+  },
+  editInfoLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: fonts.poppins.medium,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  editInfoValue: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontFamily: fonts.poppins.semibold,
+    marginTop: spacing.xs,
+  },
+  inputLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: fonts.poppins.medium,
+    marginBottom: spacing.xs,
   },
 
   // ─── Villager Modal ───────────────────────

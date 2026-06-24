@@ -10,6 +10,7 @@ import { formatDate } from '../../utils/dates';
 import {
   useGetCollectionMemberDetailQuery,
   useGetPaymentsForCollectionQuery,
+  useGetCarryForwardDuesQuery,
 } from '../../store/api/supabaseApi';
 import { supabase } from '../../store/supabaseClient';
 
@@ -33,6 +34,7 @@ export function VillagerPaymentDetailScreen({ route, navigation }: any) {
 
   const { data: member } = useGetCollectionMemberDetailQuery(resolvedMemberId ?? '', { skip: !resolvedMemberId });
   const { data: payments = [] } = useGetPaymentsForCollectionQuery(resolvedMemberId ?? '', { skip: !resolvedMemberId });
+  const { data: carryForwards = [] } = useGetCarryForwardDuesQuery(resolvedMemberId ?? '', { skip: !resolvedMemberId });
 
   const villagerData: { name: string; phone: string } | null =
     (member?.villagers as any) ?? null;
@@ -40,19 +42,21 @@ export function VillagerPaymentDetailScreen({ route, navigation }: any) {
     (member?.collections as any) ?? null;
 
   const amountDue = Number(member?.amount_due ?? 0);
+  const creditBalance = Number((member as any)?.credit_balance ?? 0);
+  const baseAmountDue = Number((member as any)?.base_amount_due ?? 0);
   const totalPaid = useMemo(
     () => payments.reduce((s, p) => s + Number(p.amount_paid), 0),
     [payments]
   );
   const balance = amountDue - totalPaid;
+  const totalCarryForward = useMemo(
+    () => carryForwards.reduce((s: number, c: any) => s + Number(c.amount), 0),
+    [carryForwards]
+  );
 
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-
         <Animated.View entering={FadeInUp.duration(400)}>
           <Text style={styles.title}>{villagerData?.name ?? 'Villager'}</Text>
           {collectionData && (
@@ -99,9 +103,49 @@ export function VillagerPaymentDetailScreen({ route, navigation }: any) {
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(150).duration(400)}>
-          <Text style={styles.sectionTitle}>Carry-Forward Dues</Text>
+          <Text style={styles.sectionTitle}>
+            Carry-Forward Dues
+            {creditBalance > 0 ? ` · Credit: ${formatCurrency(creditBalance)}` : ''}
+          </Text>
           <Card glass>
-            <Text style={styles.emptyText}>No carry-forward dues.</Text>
+            {carryForwards.length === 0 && creditBalance === 0 ? (
+              <Text style={styles.emptyText}>No carry-forward dues.</Text>
+            ) : (
+              <>
+                {carryForwards.map((cf: any) => (
+                  <View key={cf.id} style={styles.historyItem}>
+                    <View style={styles.historyLeft}>
+                      <Text style={styles.historyDate}>
+                        {cf.from_month} → {cf.to_month}
+                      </Text>
+                    </View>
+                    <Text style={[styles.historyAmount, { color: colors.warning }]}>
+                      {formatCurrency(Number(cf.amount))}
+                    </Text>
+                  </View>
+                ))}
+                {totalCarryForward > 0 && (
+                  <View style={[styles.historyItem, { borderBottomWidth: 0 }]}>
+                    <Text style={[{ color: colors.textMuted, fontFamily: fonts.poppins.semibold, fontSize: 13 }]}>
+                      Total Carry-Forward
+                    </Text>
+                    <Text style={[styles.historyAmount, { color: colors.danger }]}>
+                      {formatCurrency(totalCarryForward)}
+                    </Text>
+                  </View>
+                )}
+                {creditBalance > 0 && (
+                  <View style={[styles.historyItem, { borderBottomWidth: 0 }]}>
+                    <Text style={[{ color: colors.textMuted, fontFamily: fonts.poppins.semibold, fontSize: 13 }]}>
+                      Credit Balance
+                    </Text>
+                    <Text style={[styles.historyAmount, { color: colors.secondary }]}>
+                      {formatCurrency(creditBalance)}
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
           </Card>
         </Animated.View>
       </ScrollView>
@@ -125,15 +169,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 100,
     paddingHorizontal: spacing.xl,
-  },
-  backBtn: {
-    paddingTop: spacing.huge,
-    marginBottom: spacing.lg,
-  },
-  backText: {
-    fontFamily: fonts.poppins.medium,
-    fontSize: 14,
-    color: colors.primary,
   },
   title: {
     fontFamily: fonts.poppins.bold,

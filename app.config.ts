@@ -7,6 +7,7 @@ export default {
   scheme: 'gramseva',
   userInterfaceStyle: 'dark',
   splash: {
+    image: './assets/images/splash.png',
     backgroundColor: '#0A0E1A',
     resizeMode: 'contain',
   },
@@ -14,12 +15,15 @@ export default {
   ios: {
     supportsTablet: false,
     bundleIdentifier: 'com.gramseva.app',
+    buildNumber: '1',
   },
   android: {
     adaptiveIcon: {
+      foregroundImage: './assets/images/adaptive-icon.png',
       backgroundColor: '#0A0E1A',
     },
     package: 'com.gramseva.app',
+    versionCode: 1,
     sms: true,
     permissions: ['android.permission.SEND_SMS'],
   },
@@ -28,6 +32,15 @@ export default {
   },
   plugins: [
     'expo-secure-store',
+    [
+      'expo-build-properties',
+      {
+        android: {
+          permissions: ['android.permission.SEND_SMS'],
+        },
+      },
+    ],
+    './plugins/withSendSms',
   ],
   extra: {
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,

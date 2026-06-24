@@ -9,6 +9,7 @@ import Toast from 'react-native-toast-message';
 import { formatCurrency } from '../../utils/currency';
 import { getCurrentMonthLabel } from '../../utils/dates';
 import { useSMS } from '../../hooks/useSMS';
+import { supabase } from '../../store/supabaseClient';
 import {
   useGetCollectionMemberDetailQuery,
   useGetPaymentsForCollectionQuery,
@@ -24,6 +25,7 @@ export function RecordPaymentScreen({ route, navigation }: any) {
 
   const [amount, setAmount] = React.useState('');
   const [note, setNote] = React.useState('');
+  const [isAdvance, setIsAdvance] = React.useState(false);
 
   const { data: member, isLoading: loadingMember } = useGetCollectionMemberDetailQuery(memberId);
   const { data: payments = [] } = useGetPaymentsForCollectionQuery(memberId);
@@ -41,6 +43,8 @@ export function RecordPaymentScreen({ route, navigation }: any) {
   );
   const remaining = amountDue - amountPaid;
   const enteredAmount = parseFloat(amount || '0');
+  const isOverpayment = remaining <= 0 || enteredAmount > Math.max(remaining, 0);
+  const extraAmount = remaining <= 0 ? enteredAmount : enteredAmount - Math.max(remaining, 0);
 
   const statusType =
     enteredAmount === 0
@@ -63,14 +67,51 @@ export function RecordPaymentScreen({ route, navigation }: any) {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     try {
-      await recordPayment({
-        collection_member_id: memberId,
-        amount_paid: enteredAmount,
-        payment_type: paymentType,
-        month_label: getCurrentMonthLabel(),
-        note: note || undefined,
-        recorded_by: collector?.id ?? undefined,
-      }).unwrap();
+      if (isOverpayment && isAdvance) {
+        if (remaining > 0) {
+          await recordPayment({
+            collection_member_id: memberId,
+            amount_paid: remaining,
+            payment_type: 'full',
+            month_label: getCurrentMonthLabel(),
+            note: note || undefined,
+            recorded_by: collector?.id ?? undefined,
+          }).unwrap();
+        }
+        const { error } = await supabase.rpc('add_credit', {
+          p_member_id: memberId,
+          p_amount: extraAmount,
+        });
+        if (error) throw error;
+      } else if (isOverpayment && !isAdvance) {
+        if (remaining > 0) {
+          await recordPayment({
+            collection_member_id: memberId,
+            amount_paid: remaining,
+            payment_type: 'full',
+            month_label: getCurrentMonthLabel(),
+            note: note || undefined,
+            recorded_by: collector?.id ?? undefined,
+          }).unwrap();
+        }
+        await recordPayment({
+          collection_member_id: memberId,
+          amount_paid: extraAmount,
+          payment_type: 'extra',
+          month_label: getCurrentMonthLabel(),
+          note: 'Extra donation payment',
+          recorded_by: collector?.id ?? undefined,
+        }).unwrap();
+      } else {
+        await recordPayment({
+          collection_member_id: memberId,
+          amount_paid: enteredAmount,
+          payment_type: paymentType,
+          month_label: getCurrentMonthLabel(),
+          note: note || undefined,
+          recorded_by: collector?.id ?? undefined,
+        }).unwrap();
+      }
 
       const msg = generateReminderMessage(
         villagerData?.name ?? 'Villager',
@@ -90,8 +131,9 @@ export function RecordPaymentScreen({ route, navigation }: any) {
       Toast.show({ type: 'error', text1: err?.message ?? err?.error ?? 'Failed to record payment' });
     }
   }, [
-    amount, enteredAmount, memberId, paymentType, note, collector,
-    recordPayment, villagerData, collectionData, remaining, sendSMS,
+    amount, enteredAmount, isAdvance, isOverpayment, extraAmount,
+    memberId, remaining, paymentType, note, collector,
+    recordPayment, villagerData, collectionData, sendSMS,
     generateReminderMessage, navigation,
   ]);
 
@@ -106,10 +148,6 @@ export function RecordPaymentScreen({ route, navigation }: any) {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-
         <Animated.View entering={FadeInUp.duration(400)}>
           <View style={styles.villagerHeader}>
             <Avatar name={villagerData?.name ?? 'Villager'} size={56} />
@@ -166,6 +204,32 @@ export function RecordPaymentScreen({ route, navigation }: any) {
           )}
         </Animated.View>
 
+        {isOverpayment && (
+          <Animated.View entering={FadeInUp.duration(200)} style={styles.extraSection}>
+            <Text style={styles.inputLabel}>Extra ₹{extraAmount} — how to handle?</Text>
+            <TouchableOpacity
+              style={[styles.radioRow, !isAdvance && styles.radioSelected]}
+              onPress={() => setIsAdvance(false)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.radio, !isAdvance && styles.radioActive]}>
+                {!isAdvance && <View style={styles.radioInner} />}
+              </View>
+              <Text style={styles.radioLabel}>Happily pay extra (donation, no credit)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.radioRow, isAdvance && styles.radioSelected]}
+              onPress={() => setIsAdvance(true)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.radio, isAdvance && styles.radioActive]}>
+                {isAdvance && <View style={styles.radioInner} />}
+              </View>
+              <Text style={styles.radioLabel}>Pay in advance (credit for next months)</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
         <Animated.View entering={FadeInUp.delay(200).duration(400)}>
           <Text style={styles.inputLabel}>Note (optional)</Text>
           <TextInput
@@ -220,13 +284,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.xl,
     paddingBottom: 100,
-  },
-  backText: {
-    fontFamily: fonts.poppins.medium,
-    fontSize: 14,
-    color: colors.primary,
-    paddingTop: spacing.huge,
-    marginBottom: spacing.lg,
   },
   villagerHeader: {
     flexDirection: 'row',
@@ -308,6 +365,49 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     marginBottom: spacing.xl,
+  },
+  extraSection: {
+    marginBottom: spacing.xl,
+  },
+  radioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  radioSelected: {
+    backgroundColor: colors.primary + '10',
+    borderColor: colors.primary + '30',
+  },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.textMuted,
+    marginRight: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioActive: {
+    borderColor: colors.primary,
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+  },
+  radioLabel: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 14,
+    color: colors.textPrimary,
+    flex: 1,
   },
   noteInput: {
     fontFamily: fonts.inter.regular,

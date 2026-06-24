@@ -14,6 +14,7 @@ import { AdminDashboardScreen } from '../screens/admin/AdminDashboardScreen';
 import { AllCollectionsScreen } from '../screens/admin/AllCollectionsScreen';
 import { CreateCollectionScreen } from '../screens/admin/CreateCollectionScreen';
 import { CollectionDetailScreen } from '../screens/admin/CollectionDetailScreen';
+import { CollectionHistoryScreen } from '../screens/admin/CollectionHistoryScreen';
 import { VillagerPaymentDetailScreen } from '../screens/admin/VillagerPaymentDetailScreen';
 import { VillagersScreen } from '../screens/admin/VillagersScreen';
 import { CollectorsScreen } from '../screens/admin/CollectorsScreen';
@@ -117,6 +118,7 @@ function AdminStack() {
         options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
       />
       <Stack.Screen name="CollectionDetail" component={CollectionDetailScreen} />
+      <Stack.Screen name="CollectionHistory" component={CollectionHistoryScreen} />
       <Stack.Screen name="VillagerPaymentDetail" component={VillagerPaymentDetailScreen} />
     </Stack.Navigator>
   );

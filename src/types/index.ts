@@ -34,6 +34,7 @@ export interface Collection {
   type: CollectionType;
   status: CollectionStatus;
   target_amount: number | null;
+  current_month_label: string | null;
   created_at: string;
 }
 
@@ -43,6 +44,8 @@ export interface CollectionMember {
   villager_id: string;
   collector_id: string;
   amount_due: number;
+  base_amount_due: number;
+  credit_balance: number;
   reminder_date: number | null;
   created_at: string;
 }
@@ -130,6 +133,26 @@ export interface VillagerHistoryEntry {
   payment: Payment;
   collection: Collection;
   member: CollectionMember;
+}
+
+export interface CollectionCycle {
+  id: string;
+  collection_id: string;
+  month_label: string;
+  total_due: number;
+  member_snapshots: CycleMemberSnapshot[] | null;
+  status: 'active' | 'closed';
+  started_at: string;
+  closed_at: string | null;
+}
+
+export interface CycleMemberSnapshot {
+  member_id: string;
+  villager_id: string;
+  villager_name: string;
+  amount_due: number;
+  credit_balance: number;
+  collector_name?: string;
 }
 
 export interface CreateCollectionPayload {

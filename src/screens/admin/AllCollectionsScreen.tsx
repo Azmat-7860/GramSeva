@@ -19,7 +19,7 @@ export function AllCollectionsScreen({ navigation }: AllCollectionsScreenProps) 
   const { villageId } = useAppSelector((state) => state.auth);
   const [filter, setFilter] = useState<FilterType>('all');
 
-  const { data: collections = [] } = useGetCollectionsQuery(villageId ?? '');
+  const { data: collections = [] } = useGetCollectionsQuery(villageId ?? '', { skip: !villageId });
   const { data: stats } = useGetDashboardStatsQuery(villageId ?? '', { skip: !villageId });
 
   const statsMap = useMemo(() => {
@@ -49,13 +49,7 @@ export function AllCollectionsScreen({ navigation }: AllCollectionsScreenProps) 
     <View style={styles.container}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <Animated.View entering={FadeInUp.duration(400)}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => navigation.goBack()}>
-              <Text style={styles.backText}>← Back</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>All Collections</Text>
-            <View style={{ width: 60 }} />
-          </View>
+          <Text style={styles.title}>All Collections</Text>
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(100).duration(400)}>
@@ -112,19 +106,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 30,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
-  },
-  backText: {
-    fontFamily: fonts.poppins.medium,
-    fontSize: 14,
-    color: colors.primary,
   },
   title: {
     fontFamily: fonts.poppins.semibold,

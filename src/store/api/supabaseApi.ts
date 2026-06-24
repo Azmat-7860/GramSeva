@@ -9,6 +9,7 @@ import {
   AggregateTotals,
   CreateCollectionPayload,
   RecordPaymentPayload,
+  CollectionCycle,
 } from '../../types';
 
 export const supabaseApi = createApi({
@@ -130,6 +131,8 @@ export const supabaseApi = createApi({
 
         const memberInserts = members.map((m) => ({
           ...m,
+          base_amount_due: m.amount_due,
+          credit_balance: 0,
           collection_id: collection.id,
         }));
         const { error: memError } = await supabase
@@ -220,6 +223,20 @@ export const supabaseApi = createApi({
       providesTags: ['CollectionMembers'],
     }),
 
+    updateCollectionMember: builder.mutation<any, { id: string; amount_due: number }>({
+      queryFn: async ({ id, amount_due }) => {
+        const { data, error } = await supabase
+          .from('collection_members')
+          .update({ amount_due, base_amount_due: amount_due })
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) return { error };
+        return { data };
+      },
+      invalidatesTags: ['CollectionMembers', 'Payments', 'Collections'],
+    }),
+
     addCollectionMember: builder.mutation<any, {
       collection_id: string;
       villager_id: string;
@@ -286,19 +303,22 @@ export const supabaseApi = createApi({
       providesTags: ['Payments'],
     }),
 
-    getPaymentsByCollection: builder.query<any[], string>({
-      queryFn: async (collectionId) => {
+    getPaymentsByCollection: builder.query<any[], { collectionId: string; monthLabel?: string }>({
+      queryFn: async ({ collectionId, monthLabel }) => {
         const { data: members } = await supabase
           .from('collection_members')
           .select('id')
           .eq('collection_id', collectionId);
         if (!members?.length) return { data: [] };
         const memberIds = members.map((m) => m.id);
-        const { data, error } = await supabase
+        let query = supabase
           .from('payments')
           .select('*, collectors(name)')
-          .in('collection_member_id', memberIds)
-          .order('paid_at', { ascending: false });
+          .in('collection_member_id', memberIds);
+        if (monthLabel) {
+          query = query.eq('month_label', monthLabel);
+        }
+        const { data, error } = await query.order('paid_at', { ascending: false });
         if (error) return { error };
         return { data: data ?? [] };
       },
@@ -466,6 +486,46 @@ export const supabaseApi = createApi({
       invalidatesTags: ['Collectors'],
     }),
 
+    // ─── Carry Forward Dues ──────────────────────────────────
+    getCarryForwardDues: builder.query<any[], string>({
+      queryFn: async (memberId) => {
+        const { data, error } = await supabase
+          .from('carry_forward_dues')
+          .select('*')
+          .eq('collection_member_id', memberId)
+          .order('created_at', { ascending: false });
+        if (error) return { error };
+        return { data: data ?? [] };
+      },
+      providesTags: ['Payments'],
+    }),
+
+    // ─── Collection Cycles ─────────────────────────────────
+    getCollectionCycles: builder.query<CollectionCycle[], string>({
+      queryFn: async (collectionId) => {
+        const { data, error } = await supabase
+          .from('collection_cycles')
+          .select('*')
+          .eq('collection_id', collectionId)
+          .order('started_at', { ascending: false });
+        if (error) return { error };
+        return { data: data ?? [] };
+      },
+      providesTags: ['Collections'],
+    }),
+
+    // ─── Start New Cycle ────────────────────────────────────
+    startNewCycle: builder.mutation<any, string>({
+      queryFn: async (collectionId) => {
+        const { data, error } = await supabase
+          .rpc('start_new_cycle', { p_collection_id: collectionId });
+        if (error) return { error };
+        if (data?.error) return { error: new Error(data.error) };
+        return { data };
+      },
+      invalidatesTags: ['CollectionMembers', 'Payments', 'Collections'],
+    }),
+
     // ─── Collection Collectors ───────────────────────────────
     getCollectionCollectors: builder.query<any[], string>({
       queryFn: async (collectionId) => {
@@ -534,6 +594,7 @@ export const {
   useGetCollectionMembersWithVillagersQuery,
   useGetCollectionMemberDetailQuery,
   useAddCollectionMemberMutation,
+  useUpdateCollectionMemberMutation,
   useGetCollectionQuery,
   useGetCollectorAssignmentsQuery,
   useGetPaymentsForCollectionQuery,
@@ -550,4 +611,7 @@ export const {
   useAddCollectorToCollectionMutation,
   useRemoveCollectorFromCollectionMutation,
   useGetCollectorCollectionsQuery,
+  useGetCarryForwardDuesQuery,
+  useStartNewCycleMutation,
+  useGetCollectionCyclesQuery,
 } = supabaseApi;
